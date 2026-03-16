@@ -45,6 +45,15 @@ CSS = """
     border-radius: 4px;
     background-color: alpha(@card_bg_color, 0.7);
 }
+
+.monospace {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.warning {
+    color: @warning_color;
+}
 """
 
 
