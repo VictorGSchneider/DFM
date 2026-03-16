@@ -18,12 +18,12 @@ A GTK4/Adwaita GUI application for managing dotfiles on Arch Linux.
 
 ## Supported Dotfiles
 
-Shells: `.bashrc`, `.zshrc`, `.profile`, Fish
-Window Managers: i3, Sway, Hyprland, BSPWM, Awesome, Openbox
-Terminals: Alacritty, Kitty, Foot, WezTerm
-Bars: Waybar, Polybar
-Editors: Vim, Neovim, Nano
-And many more (80+ known configs)
+- Shells: `.bashrc`, `.zshrc`, `.profile`, Fish
+- Window Managers: i3, Sway, Hyprland, BSPWM, Awesome, Openbox
+- Terminals: Alacritty, Kitty, Foot, WezTerm
+- Bars: Waybar, Polybar
+- Editors: Vim, Neovim, Nano
+- And many more (80+ known configs)
 
 ## Dependencies
 
