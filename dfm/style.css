@@ -1,0 +1,39 @@
+/* DFM - Dotfile Manager Stylesheet */
+
+.sidebar {
+    background-color: alpha(@window_bg_color, 0.97);
+    border-right: 1px solid alpha(@borders, 0.5);
+}
+
+.navigation-sidebar row {
+    border-radius: 8px;
+    margin: 2px 6px;
+    padding: 4px 0;
+    min-height: 36px;
+}
+
+.navigation-sidebar row:selected {
+    background-color: alpha(@accent_bg_color, 0.15);
+    color: @accent_fg_color;
+}
+
+.title-1 {
+    font-weight: 800;
+    font-size: 1.4em;
+}
+
+.dim-label {
+    opacity: 0.55;
+}
+
+.keybind-label {
+    font-family: monospace;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background-color: alpha(@card_bg_color, 0.7);
+}
+
+/* Preference groups */
+preferencesgroup {
+    margin-top: 12px;
+}
