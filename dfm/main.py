@@ -22,12 +22,20 @@ CSS = """
 .navigation-sidebar row {
     border-radius: 8px;
     margin: 2px 6px;
-    padding: 4px 0;
+    padding: 2px 0;
+    min-height: 32px;
 }
 
 .navigation-sidebar row:selected {
     background-color: alpha(@accent_bg_color, 0.15);
     color: @accent_fg_color;
+}
+
+.caption-heading {
+    font-weight: 700;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .title-1 {
