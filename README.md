@@ -2,6 +2,28 @@
 
 A GTK4/Adwaita GUI application for managing dotfiles on Arch Linux.
 
+## Screenshots
+
+<!-- Para adicionar screenshots:
+     1. Rode o app: python -m dfm.main
+     2. Tire screenshots e salve na pasta screenshots/
+     3. Descomente as linhas abaixo correspondentes
+-->
+
+<!-- ![Main window - All Dotfiles](screenshots/all-dotfiles.png) -->
+*All Dotfiles — overview page with toggle switches to enable/disable each dotfile*
+
+<!-- ![Config page](screenshots/config-page.png) -->
+*Config page — smart fields generated from the config file (toggles, sliders, color pickers, text fields)*
+
+<!-- ![Raw text viewer](screenshots/raw-viewer.png) -->
+*Raw text viewer — syntax highlighted view of the dotfile with copy and line wrap*
+
+<!-- ![GitHub Sync](screenshots/github-sync.png) -->
+*GitHub Sync — push/pull dotfiles to a GitHub repo, share as Gist*
+
+> **Nota:** substitua os placeholders acima pelas screenshots reais. Salve as imagens em `screenshots/` e descomente as linhas `![...]`.
+
 ## Features
 
 ### Smart Config Parsing
