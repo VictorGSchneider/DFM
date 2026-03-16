@@ -2,6 +2,7 @@
 
 import os
 import json
+from enum import Enum, auto
 from pathlib import Path
 
 import gi
@@ -23,6 +24,39 @@ from dfm.github_sync import (
 )
 
 
+# ── Sort Modes ──────────────────────────────────────────────────────
+
+class SortMode(Enum):
+    NAME_ASC = auto()
+    NAME_DESC = auto()
+    CATEGORY = auto()
+    PATH = auto()
+
+
+SORT_LABELS = {
+    SortMode.NAME_ASC: "Name (A-Z)",
+    SortMode.NAME_DESC: "Name (Z-A)",
+    SortMode.CATEGORY: "Category",
+    SortMode.PATH: "Path",
+}
+
+# ── Category icons ──────────────────────────────────────────────────
+
+CATEGORY_ICONS = {
+    "Shells": "utilities-terminal-symbolic",
+    "Window Managers": "preferences-desktop-display-symbolic",
+    "Terminal Emulators": "utilities-terminal-symbolic",
+    "Status Bars": "preferences-desktop-display-symbolic",
+    "Launchers": "system-search-symbolic",
+    "Notifications": "preferences-system-notifications-symbolic",
+    "Editors": "text-editor-symbolic",
+    "Media": "multimedia-video-player-symbolic",
+    "Appearance": "preferences-desktop-theme-symbolic",
+    "Development": "utilities-terminal-symbolic",
+    "System": "preferences-system-symbolic",
+}
+
+
 class DfmWindow(Adw.ApplicationWindow):
     """Main window with sidebar navigation and config panel."""
 
@@ -33,6 +67,16 @@ class DfmWindow(Adw.ApplicationWindow):
         self.dotfiles: list[DotfileEntry] = []
         self.current_entry: DotfileEntry | None = None
         self.current_config: ParsedConfig | None = None
+        self.sidebar_sort_mode: SortMode = SortMode.CATEGORY
+        self.global_sort_mode: SortMode = SortMode.NAME_ASC
+        self.group_sort_modes: dict[str, SortMode] = {}
+        # Track expanded state of sidebar categories
+        self.sidebar_expanded: dict[str, bool] = {}
+        # Track group switch rows for tri-state updates
+        self._group_check_buttons: dict[str, Gtk.CheckButton] = {}
+        self._group_switch_rows: dict[str, list[Adw.SwitchRow]] = {}
+        self._master_check: Gtk.CheckButton | None = None
+        self._updating_toggles = False
 
         self._build_ui()
         self._scan_and_populate()
@@ -109,7 +153,7 @@ class DfmWindow(Adw.ApplicationWindow):
         self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.paned.set_shrink_start_child(False)
         self.paned.set_shrink_end_child(False)
-        self.paned.set_position(260)
+        self.paned.set_position(270)
 
         # Sidebar
         self._build_sidebar()
@@ -132,10 +176,43 @@ class DfmWindow(Adw.ApplicationWindow):
         self.set_content(main_box)
 
     def _build_sidebar(self) -> None:
-        """Build the sidebar with dotfile list."""
+        """Build the sidebar with tree view grouped by category."""
         self.sidebar_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.sidebar_box.add_css_class("sidebar")
-        self.sidebar_box.set_size_request(260, -1)
+        self.sidebar_box.set_size_request(270, -1)
+
+        # Sort dropdown at top of sidebar
+        sort_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        sort_box.set_margin_start(12)
+        sort_box.set_margin_end(12)
+        sort_box.set_margin_top(8)
+        sort_box.set_margin_bottom(4)
+
+        sort_icon = Gtk.Image.new_from_icon_name("view-sort-descending-symbolic")
+        sort_box.append(sort_icon)
+
+        sort_label = Gtk.Label(label="Sort:")
+        sort_label.add_css_class("dim-label")
+        sort_box.append(sort_label)
+
+        self.sidebar_sort_dropdown = Gtk.DropDown()
+        sort_model = Gtk.StringList()
+        for mode in SortMode:
+            sort_model.append(SORT_LABELS[mode])
+        self.sidebar_sort_dropdown.set_model(sort_model)
+        self.sidebar_sort_dropdown.set_selected(
+            list(SortMode).index(self.sidebar_sort_mode)
+        )
+        self.sidebar_sort_dropdown.set_hexpand(True)
+        self.sidebar_sort_dropdown.connect(
+            "notify::selected", self._on_sidebar_sort_changed
+        )
+        sort_box.append(self.sidebar_sort_dropdown)
+
+        self.sidebar_box.append(sort_box)
+
+        sep = Gtk.Separator()
+        self.sidebar_box.append(sep)
 
         # Sidebar scrolled area
         scrolled = Gtk.ScrolledWindow()
@@ -156,13 +233,6 @@ class DfmWindow(Adw.ApplicationWindow):
         """Scan for dotfiles and populate the sidebar."""
         self.dotfiles = scan_dotfiles()
 
-        # Clear sidebar
-        while True:
-            row = self.sidebar_list.get_row_at_index(0)
-            if row is None:
-                break
-            self.sidebar_list.remove(row)
-
         # Clear content stack
         while True:
             child = self.content_stack.get_first_child()
@@ -170,46 +240,105 @@ class DfmWindow(Adw.ApplicationWindow):
                 break
             self.content_stack.remove(child)
 
-        # Add "All Dotfiles" row
-        all_row = self._make_sidebar_row(
-            "starred-symbolic", "All Dotfiles", None
-        )
-        all_row._dfm_entry = None
-        self.sidebar_list.append(all_row)
-
         # Build the All Dotfiles page
         all_page = self._build_all_dotfiles_page()
         self.content_stack.add_named(all_page, "all-dotfiles")
 
-        # Add each dotfile
+        # Build each dotfile config page
         for entry in self.dotfiles:
-            row = self._make_sidebar_row(
-                entry.icon_name, entry.display_name, entry
-            )
-            row._dfm_entry = entry
-            self.sidebar_list.append(row)
-
-            # Build config page
             page = self._build_config_page(entry)
             self.content_stack.add_named(page, entry.name)
+
+        # Populate sidebar tree
+        self._rebuild_sidebar_tree()
+
+    def _rebuild_sidebar_tree(self) -> None:
+        """Rebuild the sidebar tree with current sort mode."""
+        # Clear sidebar
+        while True:
+            row = self.sidebar_list.get_row_at_index(0)
+            if row is None:
+                break
+            self.sidebar_list.remove(row)
+
+        # "All Dotfiles" always first
+        all_row = self._make_sidebar_row(
+            "starred-symbolic", "All Dotfiles", indent=0
+        )
+        all_row._dfm_entry = None
+        all_row._dfm_is_category = False
+        self.sidebar_list.append(all_row)
+
+        mode = self.sidebar_sort_mode
+
+        if mode == SortMode.CATEGORY:
+            self._populate_sidebar_by_category()
+        else:
+            self._populate_sidebar_flat(mode)
 
         # Select first row
         first = self.sidebar_list.get_row_at_index(0)
         if first:
             self.sidebar_list.select_row(first)
 
+    def _populate_sidebar_by_category(self) -> None:
+        """Populate sidebar as a tree grouped by category."""
+        groups = _group_by_category(self.dotfiles)
+
+        for cat_name in sorted(groups.keys()):
+            entries = groups[cat_name]
+            is_expanded = self.sidebar_expanded.get(cat_name, True)
+
+            # Category header row
+            icon = CATEGORY_ICONS.get(cat_name, "folder-symbolic")
+            cat_row = self._make_category_row(icon, cat_name,
+                                              len(entries), is_expanded)
+            cat_row._dfm_entry = None
+            cat_row._dfm_is_category = True
+            cat_row._dfm_category = cat_name
+            self.sidebar_list.append(cat_row)
+
+            if is_expanded:
+                for entry in sorted(entries,
+                                    key=lambda e: e.display_name.lower()):
+                    row = self._make_sidebar_row(
+                        entry.icon_name, entry.display_name, indent=1
+                    )
+                    row._dfm_entry = entry
+                    row._dfm_is_category = False
+                    self.sidebar_list.append(row)
+
+    def _populate_sidebar_flat(self, mode: SortMode) -> None:
+        """Populate sidebar as a flat sorted list."""
+        entries = list(self.dotfiles)
+
+        if mode == SortMode.NAME_ASC:
+            entries.sort(key=lambda e: e.display_name.lower())
+        elif mode == SortMode.NAME_DESC:
+            entries.sort(key=lambda e: e.display_name.lower(), reverse=True)
+        elif mode == SortMode.PATH:
+            entries.sort(key=lambda e: e.path.lower())
+
+        for entry in entries:
+            row = self._make_sidebar_row(
+                entry.icon_name, entry.display_name, indent=0
+            )
+            row._dfm_entry = entry
+            row._dfm_is_category = False
+            self.sidebar_list.append(row)
+
     def _make_sidebar_row(self, icon_name: str, label: str,
-                          entry: DotfileEntry | None) -> Gtk.ListBoxRow:
+                          indent: int = 0) -> Gtk.ListBoxRow:
         """Create a sidebar row."""
         row = Gtk.ListBoxRow()
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        box.set_margin_top(8)
-        box.set_margin_bottom(8)
-        box.set_margin_start(12)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box.set_margin_top(6)
+        box.set_margin_bottom(6)
+        box.set_margin_start(12 + indent * 20)
         box.set_margin_end(12)
 
         icon = Gtk.Image.new_from_icon_name(icon_name)
-        icon.set_pixel_size(20)
+        icon.set_pixel_size(18)
         box.append(icon)
 
         lbl = Gtk.Label(label=label)
@@ -217,6 +346,45 @@ class DfmWindow(Adw.ApplicationWindow):
         lbl.set_hexpand(True)
         lbl.set_ellipsize(Pango.EllipsizeMode.END)
         box.append(lbl)
+
+        row.set_child(box)
+        return row
+
+    def _make_category_row(self, icon_name: str, label: str,
+                           count: int,
+                           expanded: bool) -> Gtk.ListBoxRow:
+        """Create a category header row with expand/collapse arrow."""
+        row = Gtk.ListBoxRow()
+        row.set_selectable(False)
+        row.set_activatable(True)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
+        box.set_margin_start(8)
+        box.set_margin_end(12)
+
+        # Expander arrow
+        arrow_name = ("pan-down-symbolic" if expanded
+                      else "pan-end-symbolic")
+        arrow = Gtk.Image.new_from_icon_name(arrow_name)
+        arrow.set_pixel_size(14)
+        arrow.add_css_class("dim-label")
+        box.append(arrow)
+
+        icon = Gtk.Image.new_from_icon_name(icon_name)
+        icon.set_pixel_size(18)
+        box.append(icon)
+
+        lbl = Gtk.Label(label=label)
+        lbl.set_halign(Gtk.Align.START)
+        lbl.set_hexpand(True)
+        lbl.add_css_class("caption-heading")
+        box.append(lbl)
+
+        count_lbl = Gtk.Label(label=str(count))
+        count_lbl.add_css_class("dim-label")
+        box.append(count_lbl)
 
         row.set_child(box)
         return row
@@ -232,13 +400,35 @@ class DfmWindow(Adw.ApplicationWindow):
         clamp = Adw.Clamp()
         clamp.set_maximum_size(700)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        box.set_margin_top(24)
-        box.set_margin_bottom(24)
-        box.set_margin_start(24)
-        box.set_margin_end(24)
+        self._all_dotfiles_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=8
+        )
+        self._all_dotfiles_box.set_margin_top(24)
+        self._all_dotfiles_box.set_margin_bottom(24)
+        self._all_dotfiles_box.set_margin_start(24)
+        self._all_dotfiles_box.set_margin_end(24)
 
-        # Title
+        self._rebuild_all_dotfiles_content()
+
+        clamp.set_child(self._all_dotfiles_box)
+        scrolled.set_child(clamp)
+        return scrolled
+
+    def _rebuild_all_dotfiles_content(self) -> None:
+        """Rebuild the All Dotfiles page content."""
+        box = self._all_dotfiles_box
+
+        # Clear
+        while True:
+            child = box.get_first_child()
+            if child is None:
+                break
+            box.remove(child)
+
+        self._group_check_buttons.clear()
+        self._group_switch_rows.clear()
+
+        # ── Header ──
         title = Gtk.Label(label="All Dotfiles")
         title.add_css_class("title-1")
         title.set_halign(Gtk.Align.START)
@@ -249,19 +439,96 @@ class DfmWindow(Adw.ApplicationWindow):
         )
         subtitle.add_css_class("dim-label")
         subtitle.set_halign(Gtk.Align.START)
-        subtitle.set_margin_bottom(16)
         box.append(subtitle)
 
-        # Group by category
-        groups: dict[str, list[DotfileEntry]] = {}
-        for entry in self.dotfiles:
-            cat = _categorize(entry)
-            groups.setdefault(cat, []).append(entry)
+        # ── Master toggle + global sort ──
+        controls_group = Adw.PreferencesGroup()
 
-        for group_name, entries in sorted(groups.items()):
+        # Master toggle row
+        master_row = Adw.ActionRow()
+        master_row.set_title("Enable All")
+        master_row.set_subtitle("Toggle all dotfiles at once")
+
+        self._master_check = Gtk.CheckButton()
+        self._master_check.set_valign(Gtk.Align.CENTER)
+        self._update_master_check_state()
+        self._master_check.connect("toggled", self._on_master_toggled)
+        master_row.add_suffix(self._master_check)
+        master_row.set_activatable_widget(self._master_check)
+        controls_group.add(master_row)
+
+        # Global sort row
+        sort_row = Adw.ActionRow()
+        sort_row.set_title("Sort All Groups")
+        sort_row.set_subtitle("Default sort order for all groups below")
+
+        global_sort_dropdown = Gtk.DropDown()
+        sort_model = Gtk.StringList()
+        for mode in SortMode:
+            sort_model.append(SORT_LABELS[mode])
+        global_sort_dropdown.set_model(sort_model)
+        global_sort_dropdown.set_selected(
+            list(SortMode).index(self.global_sort_mode)
+        )
+        global_sort_dropdown.set_valign(Gtk.Align.CENTER)
+        global_sort_dropdown.connect(
+            "notify::selected", self._on_global_sort_changed
+        )
+        sort_row.add_suffix(global_sort_dropdown)
+        controls_group.add(sort_row)
+
+        box.append(controls_group)
+
+        # ── Groups ──
+        groups = _group_by_category(self.dotfiles)
+
+        for group_name in sorted(groups.keys()):
+            entries = list(groups[group_name])
+            group_sort = self.group_sort_modes.get(
+                group_name, self.global_sort_mode
+            )
+            entries = _sort_entries(entries, group_sort)
+
             group = Adw.PreferencesGroup()
-            group.set_title(group_name)
 
+            # Group header row with tri-state check + sort dropdown
+            header_row = Adw.ActionRow()
+            header_row.set_title(group_name)
+            enabled_count = sum(1 for e in entries if e.enabled)
+            header_row.set_subtitle(
+                f"{enabled_count}/{len(entries)} enabled"
+            )
+
+            # Group tri-state check button
+            group_check = Gtk.CheckButton()
+            group_check.set_valign(Gtk.Align.CENTER)
+            self._group_check_buttons[group_name] = group_check
+            self._update_group_check_state(group_name, entries)
+            group_check.connect(
+                "toggled", self._on_group_toggled, group_name
+            )
+            header_row.add_prefix(group_check)
+
+            # Per-group sort dropdown
+            group_sort_dropdown = Gtk.DropDown()
+            gsort_model = Gtk.StringList()
+            for mode in SortMode:
+                gsort_model.append(SORT_LABELS[mode])
+            group_sort_dropdown.set_model(gsort_model)
+            group_sort_dropdown.set_selected(
+                list(SortMode).index(group_sort)
+            )
+            group_sort_dropdown.set_valign(Gtk.Align.CENTER)
+            group_sort_dropdown.connect(
+                "notify::selected", self._on_group_sort_changed,
+                group_name
+            )
+            header_row.add_suffix(group_sort_dropdown)
+
+            group.add(header_row)
+
+            # Individual dotfile rows
+            self._group_switch_rows[group_name] = []
             for entry in entries:
                 row = Adw.SwitchRow()
                 row.set_title(entry.display_name)
@@ -272,8 +539,9 @@ class DfmWindow(Adw.ApplicationWindow):
                 )
                 row.set_active(entry.enabled)
                 row.connect("notify::active",
-                            self._on_dotfile_toggled, entry)
+                            self._on_dotfile_toggled, entry, group_name)
                 group.add(row)
+                self._group_switch_rows[group_name].append(row)
 
             box.append(group)
 
@@ -309,7 +577,6 @@ class DfmWindow(Adw.ApplicationWindow):
         sync_actions_group = Adw.PreferencesGroup()
         sync_actions_group.set_title("Actions")
 
-        # Push button
         push_row = Adw.ActionRow()
         push_row.set_title("Push to GitHub")
         push_row.set_subtitle(
@@ -323,7 +590,6 @@ class DfmWindow(Adw.ApplicationWindow):
         push_row.set_activatable_widget(push_btn)
         sync_actions_group.add(push_row)
 
-        # Pull button
         pull_row = Adw.ActionRow()
         pull_row.set_title("Pull from GitHub")
         pull_row.set_subtitle(
@@ -346,7 +612,6 @@ class DfmWindow(Adw.ApplicationWindow):
             "Requires GitHub CLI (gh). Install: sudo pacman -S github-cli"
         )
 
-        # Init new repo
         init_row = Adw.ActionRow()
         init_row.set_title("Create New Dotfiles Repo")
         init_row.set_subtitle(
@@ -360,7 +625,6 @@ class DfmWindow(Adw.ApplicationWindow):
         init_row.set_activatable_widget(init_btn)
         setup_group.add(init_row)
 
-        # Clone existing repo
         clone_row = Adw.ActionRow()
         clone_row.set_title("Clone Existing Repo")
         clone_row.set_subtitle(
@@ -376,24 +640,134 @@ class DfmWindow(Adw.ApplicationWindow):
 
         box.append(setup_group)
 
-        clamp.set_child(box)
-        scrolled.set_child(clamp)
-        return scrolled
+    # ── Toggle hierarchy logic ──────────────────────────────────────
+
+    def _update_master_check_state(self) -> None:
+        """Update master check button to reflect all dotfiles state."""
+        if not self.dotfiles or self._master_check is None:
+            return
+        enabled = sum(1 for e in self.dotfiles if e.enabled)
+        total = len(self.dotfiles)
+        if enabled == 0:
+            self._master_check.set_inconsistent(False)
+            self._master_check.set_active(False)
+        elif enabled == total:
+            self._master_check.set_inconsistent(False)
+            self._master_check.set_active(True)
+        else:
+            self._master_check.set_inconsistent(True)
+
+    def _update_group_check_state(self, group_name: str,
+                                  entries: list[DotfileEntry]) -> None:
+        """Update a group check button to reflect its entries state."""
+        check = self._group_check_buttons.get(group_name)
+        if check is None:
+            return
+        enabled = sum(1 for e in entries if e.enabled)
+        total = len(entries)
+        if enabled == 0:
+            check.set_inconsistent(False)
+            check.set_active(False)
+        elif enabled == total:
+            check.set_inconsistent(False)
+            check.set_active(True)
+        else:
+            check.set_inconsistent(True)
+
+    def _on_master_toggled(self, check: Gtk.CheckButton) -> None:
+        """Handle master toggle: enable or disable all dotfiles."""
+        if self._updating_toggles:
+            return
+        self._updating_toggles = True
+
+        new_state = check.get_active()
+        check.set_inconsistent(False)
+
+        for entry in self.dotfiles:
+            entry.enabled = new_state
+
+        # Update all group checks
+        groups = _group_by_category(self.dotfiles)
+        for group_name, entries in groups.items():
+            gc = self._group_check_buttons.get(group_name)
+            if gc:
+                gc.set_inconsistent(False)
+                gc.set_active(new_state)
+
+            # Update switch rows
+            for sw_row in self._group_switch_rows.get(group_name, []):
+                sw_row.set_active(new_state)
+
+        self._updating_toggles = False
+
+    def _on_group_toggled(self, check: Gtk.CheckButton,
+                          group_name: str) -> None:
+        """Handle group toggle: enable or disable all in group."""
+        if self._updating_toggles:
+            return
+        self._updating_toggles = True
+
+        new_state = check.get_active()
+        check.set_inconsistent(False)
+
+        groups = _group_by_category(self.dotfiles)
+        for entry in groups.get(group_name, []):
+            entry.enabled = new_state
+
+        # Update switch rows in this group
+        for sw_row in self._group_switch_rows.get(group_name, []):
+            sw_row.set_active(new_state)
+
+        self._update_master_check_state()
+        self._updating_toggles = False
+
+    def _on_dotfile_toggled(self, switch_row: Adw.SwitchRow,
+                            _pspec, entry: DotfileEntry,
+                            group_name: str) -> None:
+        """Handle toggling a single dotfile on/off."""
+        if self._updating_toggles:
+            return
+        entry.enabled = switch_row.get_active()
+
+        # Update group check state
+        groups = _group_by_category(self.dotfiles)
+        group_entries = groups.get(group_name, [])
+        self._update_group_check_state(group_name, group_entries)
+
+        # Update master check state
+        self._update_master_check_state()
+
+    # ── Sort handlers ───────────────────────────────────────────────
+
+    def _on_sidebar_sort_changed(self, dropdown: Gtk.DropDown,
+                                 _pspec) -> None:
+        """Handle sidebar sort mode change."""
+        idx = dropdown.get_selected()
+        self.sidebar_sort_mode = list(SortMode)[idx]
+        self._rebuild_sidebar_tree()
+
+    def _on_global_sort_changed(self, dropdown: Gtk.DropDown,
+                                _pspec) -> None:
+        """Handle global sort mode change (All Dotfiles page)."""
+        idx = dropdown.get_selected()
+        self.global_sort_mode = list(SortMode)[idx]
+        # Reset per-group overrides
+        self.group_sort_modes.clear()
+        self._rebuild_all_dotfiles_content()
+
+    def _on_group_sort_changed(self, dropdown: Gtk.DropDown,
+                               _pspec, group_name: str) -> None:
+        """Handle per-group sort mode change."""
+        idx = dropdown.get_selected()
+        self.group_sort_modes[group_name] = list(SortMode)[idx]
+        self._rebuild_all_dotfiles_content()
+
+    # ── Sync status ─────────────────────────────────────────────────
 
     def _refresh_sync_status_group(self) -> None:
         """Update the sync status display."""
-        # Clear existing rows
-        while True:
-            child = self.sync_status_group.get_first_child()
-            if child is None:
-                break
-            # PreferencesGroup wraps children; use remove
-            # Adw.PreferencesGroup doesn't have a simple clear, rebuild
-            break
-
         status = get_repo_status()
 
-        # gh CLI status
         gh_row = Adw.ActionRow()
         gh_row.set_title("GitHub CLI")
         if not status["gh_available"]:
@@ -410,7 +784,6 @@ class DfmWindow(Adw.ApplicationWindow):
         gh_row.add_suffix(icon)
         self.sync_status_group.add(gh_row)
 
-        # Repo status
         repo_row = Adw.ActionRow()
         repo_row.set_title("Dotfiles Repository")
         if status["configured"] and status["exists"]:
@@ -432,206 +805,6 @@ class DfmWindow(Adw.ApplicationWindow):
         icon.set_valign(Gtk.Align.CENTER)
         repo_row.add_suffix(icon)
         self.sync_status_group.add(repo_row)
-
-    def _on_push_clicked(self, _btn: Gtk.Button) -> None:
-        """Handle push to GitHub."""
-        if not is_gh_available():
-            self._show_gh_missing_dialog()
-            return
-        if not is_gh_authenticated():
-            self._show_gh_auth_dialog()
-            return
-        if not get_repo_path():
-            info = Adw.AlertDialog()
-            info.set_heading("No Repository")
-            info.set_body(
-                "Create or clone a dotfiles repo first using "
-                "the Setup section below."
-            )
-            info.add_response("ok", "OK")
-            info.present(self)
-            return
-
-        enabled = [e for e in self.dotfiles if e.enabled]
-        if not enabled:
-            info = Adw.AlertDialog()
-            info.set_heading("No Dotfiles Selected")
-            info.set_body("Enable at least one dotfile to push.")
-            info.add_response("ok", "OK")
-            info.present(self)
-            return
-
-        # Confirm
-        confirm = Adw.AlertDialog()
-        confirm.set_heading("Push Dotfiles to GitHub")
-        confirm.set_body(
-            f"Push {len(enabled)} enabled dotfiles to your GitHub repo?\n\n"
-            "This will copy the files, commit, and push."
-        )
-        confirm.add_response("cancel", "Cancel")
-        confirm.add_response("push", "Push")
-        confirm.set_response_appearance(
-            "push", Adw.ResponseAppearance.SUGGESTED
-        )
-        confirm.connect("response", self._on_push_confirmed, enabled)
-        confirm.present(self)
-
-    def _on_push_confirmed(self, dialog: Adw.AlertDialog,
-                           response: str,
-                           entries: list[DotfileEntry]) -> None:
-        """Execute push."""
-        if response != "push":
-            return
-
-        status = push_dotfiles(entries)
-        info = Adw.AlertDialog()
-        info.set_heading("Push " + ("Complete" if status.success else "Failed"))
-        body = status.message
-        if status.details:
-            body += "\n\n" + "\n".join(status.details[:20])
-            if len(status.details) > 20:
-                body += f"\n... and {len(status.details) - 20} more"
-        info.set_body(body)
-        info.add_response("ok", "OK")
-        info.present(self)
-
-    def _on_pull_clicked(self, _btn: Gtk.Button) -> None:
-        """Handle pull from GitHub."""
-        if not is_gh_available():
-            self._show_gh_missing_dialog()
-            return
-        if not is_gh_authenticated():
-            self._show_gh_auth_dialog()
-            return
-        if not get_repo_path():
-            info = Adw.AlertDialog()
-            info.set_heading("No Repository")
-            info.set_body(
-                "Create or clone a dotfiles repo first."
-            )
-            info.add_response("ok", "OK")
-            info.present(self)
-            return
-
-        confirm = Adw.AlertDialog()
-        confirm.set_heading("Pull Dotfiles from GitHub")
-        confirm.set_body(
-            "Pull dotfiles from your GitHub repo?\n\n"
-            "Existing files will be backed up with .dfm_backup extension."
-        )
-        confirm.add_response("cancel", "Cancel")
-        confirm.add_response("pull", "Pull")
-        confirm.set_response_appearance(
-            "pull", Adw.ResponseAppearance.SUGGESTED
-        )
-        confirm.connect("response", self._on_pull_confirmed)
-        confirm.present(self)
-
-    def _on_pull_confirmed(self, dialog: Adw.AlertDialog,
-                           response: str) -> None:
-        """Execute pull."""
-        if response != "pull":
-            return
-
-        status = pull_dotfiles()
-        info = Adw.AlertDialog()
-        info.set_heading("Pull " + ("Complete" if status.success else "Failed"))
-        body = status.message
-        if status.details:
-            body += "\n\n" + "\n".join(status.details[:20])
-        info.set_body(body)
-        info.add_response("ok", "OK")
-        info.present(self)
-
-        if status.success:
-            self._scan_and_populate()
-
-    def _on_init_repo_clicked(self, _btn: Gtk.Button) -> None:
-        """Handle create new repo."""
-        if not is_gh_available():
-            self._show_gh_missing_dialog()
-            return
-        if not is_gh_authenticated():
-            self._show_gh_auth_dialog()
-            return
-
-        confirm = Adw.AlertDialog()
-        confirm.set_heading("Create Dotfiles Repository")
-        confirm.set_body(
-            "Create a new private 'dotfiles' repo on GitHub?\n\n"
-            "The repo will be cloned to ~/.dotfiles locally."
-        )
-        confirm.add_response("cancel", "Cancel")
-        confirm.add_response("create", "Create")
-        confirm.set_response_appearance(
-            "create", Adw.ResponseAppearance.SUGGESTED
-        )
-        confirm.connect("response", self._on_init_confirmed)
-        confirm.present(self)
-
-    def _on_init_confirmed(self, dialog: Adw.AlertDialog,
-                           response: str) -> None:
-        """Execute repo init."""
-        if response != "create":
-            return
-
-        status = init_repo()
-        info = Adw.AlertDialog()
-        info.set_heading(
-            "Repo Created" if status.success else "Creation Failed"
-        )
-        body = status.message
-        if status.url:
-            body += f"\n\n{status.url}"
-        info.set_body(body)
-        info.add_response("ok", "OK")
-        info.present(self)
-
-    def _on_clone_repo_clicked(self, _btn: Gtk.Button) -> None:
-        """Handle clone existing repo."""
-        if not is_gh_available():
-            self._show_gh_missing_dialog()
-            return
-        if not is_gh_authenticated():
-            self._show_gh_auth_dialog()
-            return
-
-        confirm = Adw.AlertDialog()
-        confirm.set_heading("Clone Dotfiles Repository")
-        confirm.set_body(
-            "Clone your existing 'dotfiles' repo from GitHub?\n\n"
-            "It will be cloned to ~/.dotfiles locally."
-        )
-        confirm.add_response("cancel", "Cancel")
-        confirm.add_response("clone", "Clone")
-        confirm.set_response_appearance(
-            "clone", Adw.ResponseAppearance.SUGGESTED
-        )
-        confirm.connect("response", self._on_clone_confirmed)
-        confirm.present(self)
-
-    def _on_clone_confirmed(self, dialog: Adw.AlertDialog,
-                            response: str) -> None:
-        """Execute clone."""
-        if response != "clone":
-            return
-
-        status = clone_repo()
-        info = Adw.AlertDialog()
-        info.set_heading(
-            "Clone Complete" if status.success else "Clone Failed"
-        )
-        body = status.message
-        if status.url:
-            body += f"\n\n{status.url}"
-        info.set_body(body)
-        info.add_response("ok", "OK")
-        info.present(self)
-
-    def _on_dotfile_toggled(self, switch_row: Adw.SwitchRow,
-                            _pspec, entry: DotfileEntry) -> None:
-        """Handle toggling a dotfile on/off."""
-        entry.enabled = switch_row.get_active()
 
     # ── Config Page ─────────────────────────────────────────────────
 
@@ -693,13 +866,11 @@ class DfmWindow(Adw.ApplicationWindow):
         export_btn.connect("clicked", self._on_export_single, entry)
         actions_box.append(export_btn)
 
-        # View raw text button
         view_raw_btn = Gtk.Button(label="View Raw")
         view_raw_btn.add_css_class("flat")
         view_raw_btn.connect("clicked", self._on_view_raw, entry)
         actions_box.append(view_raw_btn)
 
-        # Share as Gist button
         gist_btn = Gtk.Button(label="Share as Gist")
         gist_btn.add_css_class("flat")
         gist_btn.connect("clicked", self._on_share_gist, entry)
@@ -735,20 +906,17 @@ class DfmWindow(Adw.ApplicationWindow):
             container.append(info)
             return
 
-        # Format badge
         format_label = Gtk.Label(label=f"Format: {parsed.file_format}")
         format_label.add_css_class("dim-label")
         format_label.set_halign(Gtk.Align.START)
         format_label.set_margin_bottom(8)
         container.append(format_label)
 
-        # Group fields by section
         current_group: Adw.PreferencesGroup | None = None
         current_section = ""
 
         for field in parsed.fields:
             if field.field_type == FieldType.COMMENT:
-                # New section header
                 current_group = Adw.PreferencesGroup()
                 current_group.set_title(field.display_name)
                 if field.comment:
@@ -799,7 +967,6 @@ class DfmWindow(Adw.ApplicationWindow):
             except ValueError:
                 val = 0
 
-            # Auto-detect reasonable range
             min_v, max_v, step = _auto_range(field.key, val)
 
             scale = Gtk.Scale.new_with_range(
@@ -810,8 +977,9 @@ class DfmWindow(Adw.ApplicationWindow):
             scale.set_draw_value(True)
             scale.set_valign(Gtk.Align.CENTER)
 
-            # Value label
-            val_label = Gtk.Label(label=str(int(val) if val == int(val) else val))
+            val_label = Gtk.Label(
+                label=str(int(val) if val == int(val) else val)
+            )
             val_label.set_valign(Gtk.Align.CENTER)
             val_label.set_margin_start(8)
 
@@ -951,6 +1119,15 @@ class DfmWindow(Adw.ApplicationWindow):
         if row is None:
             return
 
+        # Handle category row click = toggle expand/collapse
+        is_cat = getattr(row, "_dfm_is_category", False)
+        if is_cat:
+            cat_name = getattr(row, "_dfm_category", "")
+            current = self.sidebar_expanded.get(cat_name, True)
+            self.sidebar_expanded[cat_name] = not current
+            self._rebuild_sidebar_tree()
+            return
+
         entry = getattr(row, "_dfm_entry", None)
         if entry is None:
             self.content_stack.set_visible_child_name("all-dotfiles")
@@ -996,7 +1173,6 @@ class DfmWindow(Adw.ApplicationWindow):
                          config_path: str) -> None:
         """Handle text entry change (debounced save)."""
         new_val = entry_widget.get_text()
-        # Save after a short delay to avoid writing on every keystroke
         if hasattr(entry_widget, "_dfm_save_id"):
             GLib.source_remove(entry_widget._dfm_save_id)
         entry_widget._dfm_save_id = GLib.timeout_add(
@@ -1091,7 +1267,6 @@ class DfmWindow(Adw.ApplicationWindow):
             info.present(self)
             return
 
-        # Confirm before uploading
         confirm = Adw.AlertDialog()
         confirm.set_heading("Share as Gist")
         confirm.set_body(
@@ -1174,6 +1349,202 @@ class DfmWindow(Adw.ApplicationWindow):
         info.add_response("ok", "OK")
         info.present(self)
 
+    # ── GitHub Sync handlers ────────────────────────────────────────
+
+    def _on_push_clicked(self, _btn: Gtk.Button) -> None:
+        """Handle push to GitHub."""
+        if not is_gh_available():
+            self._show_gh_missing_dialog()
+            return
+        if not is_gh_authenticated():
+            self._show_gh_auth_dialog()
+            return
+        if not get_repo_path():
+            info = Adw.AlertDialog()
+            info.set_heading("No Repository")
+            info.set_body(
+                "Create or clone a dotfiles repo first using "
+                "the Setup section below."
+            )
+            info.add_response("ok", "OK")
+            info.present(self)
+            return
+
+        enabled = [e for e in self.dotfiles if e.enabled]
+        if not enabled:
+            info = Adw.AlertDialog()
+            info.set_heading("No Dotfiles Selected")
+            info.set_body("Enable at least one dotfile to push.")
+            info.add_response("ok", "OK")
+            info.present(self)
+            return
+
+        confirm = Adw.AlertDialog()
+        confirm.set_heading("Push Dotfiles to GitHub")
+        confirm.set_body(
+            f"Push {len(enabled)} enabled dotfiles to your GitHub repo?\n\n"
+            "This will copy the files, commit, and push."
+        )
+        confirm.add_response("cancel", "Cancel")
+        confirm.add_response("push", "Push")
+        confirm.set_response_appearance(
+            "push", Adw.ResponseAppearance.SUGGESTED
+        )
+        confirm.connect("response", self._on_push_confirmed, enabled)
+        confirm.present(self)
+
+    def _on_push_confirmed(self, dialog: Adw.AlertDialog,
+                           response: str,
+                           entries: list[DotfileEntry]) -> None:
+        """Execute push."""
+        if response != "push":
+            return
+
+        status = push_dotfiles(entries)
+        info = Adw.AlertDialog()
+        info.set_heading("Push " + ("Complete" if status.success else "Failed"))
+        body = status.message
+        if status.details:
+            body += "\n\n" + "\n".join(status.details[:20])
+            if len(status.details) > 20:
+                body += f"\n... and {len(status.details) - 20} more"
+        info.set_body(body)
+        info.add_response("ok", "OK")
+        info.present(self)
+
+    def _on_pull_clicked(self, _btn: Gtk.Button) -> None:
+        """Handle pull from GitHub."""
+        if not is_gh_available():
+            self._show_gh_missing_dialog()
+            return
+        if not is_gh_authenticated():
+            self._show_gh_auth_dialog()
+            return
+        if not get_repo_path():
+            info = Adw.AlertDialog()
+            info.set_heading("No Repository")
+            info.set_body("Create or clone a dotfiles repo first.")
+            info.add_response("ok", "OK")
+            info.present(self)
+            return
+
+        confirm = Adw.AlertDialog()
+        confirm.set_heading("Pull Dotfiles from GitHub")
+        confirm.set_body(
+            "Pull dotfiles from your GitHub repo?\n\n"
+            "Existing files will be backed up with .dfm_backup extension."
+        )
+        confirm.add_response("cancel", "Cancel")
+        confirm.add_response("pull", "Pull")
+        confirm.set_response_appearance(
+            "pull", Adw.ResponseAppearance.SUGGESTED
+        )
+        confirm.connect("response", self._on_pull_confirmed)
+        confirm.present(self)
+
+    def _on_pull_confirmed(self, dialog: Adw.AlertDialog,
+                           response: str) -> None:
+        """Execute pull."""
+        if response != "pull":
+            return
+
+        status = pull_dotfiles()
+        info = Adw.AlertDialog()
+        info.set_heading("Pull " + ("Complete" if status.success else "Failed"))
+        body = status.message
+        if status.details:
+            body += "\n\n" + "\n".join(status.details[:20])
+        info.set_body(body)
+        info.add_response("ok", "OK")
+        info.present(self)
+
+        if status.success:
+            self._scan_and_populate()
+
+    def _on_init_repo_clicked(self, _btn: Gtk.Button) -> None:
+        """Handle create new repo."""
+        if not is_gh_available():
+            self._show_gh_missing_dialog()
+            return
+        if not is_gh_authenticated():
+            self._show_gh_auth_dialog()
+            return
+
+        confirm = Adw.AlertDialog()
+        confirm.set_heading("Create Dotfiles Repository")
+        confirm.set_body(
+            "Create a new private 'dotfiles' repo on GitHub?\n\n"
+            "The repo will be cloned to ~/.dotfiles locally."
+        )
+        confirm.add_response("cancel", "Cancel")
+        confirm.add_response("create", "Create")
+        confirm.set_response_appearance(
+            "create", Adw.ResponseAppearance.SUGGESTED
+        )
+        confirm.connect("response", self._on_init_confirmed)
+        confirm.present(self)
+
+    def _on_init_confirmed(self, dialog: Adw.AlertDialog,
+                           response: str) -> None:
+        """Execute repo init."""
+        if response != "create":
+            return
+
+        status = init_repo()
+        info = Adw.AlertDialog()
+        info.set_heading(
+            "Repo Created" if status.success else "Creation Failed"
+        )
+        body = status.message
+        if status.url:
+            body += f"\n\n{status.url}"
+        info.set_body(body)
+        info.add_response("ok", "OK")
+        info.present(self)
+
+    def _on_clone_repo_clicked(self, _btn: Gtk.Button) -> None:
+        """Handle clone existing repo."""
+        if not is_gh_available():
+            self._show_gh_missing_dialog()
+            return
+        if not is_gh_authenticated():
+            self._show_gh_auth_dialog()
+            return
+
+        confirm = Adw.AlertDialog()
+        confirm.set_heading("Clone Dotfiles Repository")
+        confirm.set_body(
+            "Clone your existing 'dotfiles' repo from GitHub?\n\n"
+            "It will be cloned to ~/.dotfiles locally."
+        )
+        confirm.add_response("cancel", "Cancel")
+        confirm.add_response("clone", "Clone")
+        confirm.set_response_appearance(
+            "clone", Adw.ResponseAppearance.SUGGESTED
+        )
+        confirm.connect("response", self._on_clone_confirmed)
+        confirm.present(self)
+
+    def _on_clone_confirmed(self, dialog: Adw.AlertDialog,
+                            response: str) -> None:
+        """Execute clone."""
+        if response != "clone":
+            return
+
+        status = clone_repo()
+        info = Adw.AlertDialog()
+        info.set_heading(
+            "Clone Complete" if status.success else "Clone Failed"
+        )
+        body = status.message
+        if status.url:
+            body += f"\n\n{status.url}"
+        info.set_body(body)
+        info.add_response("ok", "OK")
+        info.present(self)
+
+    # ── Import / Export ─────────────────────────────────────────────
+
     def _on_import_clicked(self, _btn) -> None:
         """Handle import button click."""
         dialog = Gtk.FileDialog()
@@ -1198,7 +1569,6 @@ class DfmWindow(Adw.ApplicationWindow):
             file = dialog.open_finish(result)
             if file:
                 archive_path = file.get_path()
-                # Show confirmation dialog
                 confirm = Adw.AlertDialog()
                 confirm.set_heading("Import Dotfiles")
                 confirm.set_body(
@@ -1234,7 +1604,6 @@ class DfmWindow(Adw.ApplicationWindow):
             info.add_response("ok", "OK")
             info.present(self)
 
-            # Refresh
             self._scan_and_populate()
 
     def _on_export_clicked(self, _btn) -> None:
@@ -1329,6 +1698,32 @@ def _categorize(entry: DotfileEntry) -> str:
     if "git" in name:
         return "Development"
     return "System"
+
+
+def _group_by_category(dotfiles: list[DotfileEntry]) -> dict[str, list[DotfileEntry]]:
+    """Group dotfiles by category."""
+    groups: dict[str, list[DotfileEntry]] = {}
+    for entry in dotfiles:
+        cat = _categorize(entry)
+        groups.setdefault(cat, []).append(entry)
+    return groups
+
+
+def _sort_entries(entries: list[DotfileEntry],
+                  mode: SortMode) -> list[DotfileEntry]:
+    """Sort a list of entries by the given mode."""
+    if mode == SortMode.NAME_ASC:
+        return sorted(entries, key=lambda e: e.display_name.lower())
+    elif mode == SortMode.NAME_DESC:
+        return sorted(entries, key=lambda e: e.display_name.lower(),
+                      reverse=True)
+    elif mode == SortMode.PATH:
+        return sorted(entries, key=lambda e: e.path.lower())
+    elif mode == SortMode.CATEGORY:
+        return sorted(entries, key=lambda e: (
+            _categorize(e), e.display_name.lower()
+        ))
+    return entries
 
 
 def _auto_range(key: str, current_val: float) -> tuple[float, float, float]:
