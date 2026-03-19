@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import gi
 
@@ -144,20 +143,13 @@ class ConfigPageBuilder:
 
         for tooltip, icon_name, callback in buttons:
             btn = Gtk.Button(tooltip_text=tooltip)
-            btn.set_child(
-                Gtk.Box(
-                    orientation=Gtk.Orientation.HORIZONTAL,
-                    spacing=6,
-                    children=[
-                        Gtk.Image.new_from_icon_name(icon_name),
-                        Gtk.Label(label=tooltip),
-                    ] if tooltip in ("Open in Editor", "Export") else [
-                        Gtk.Image.new_from_icon_name(icon_name),
-                    ],
-                )
-                if tooltip in ("Open in Editor", "Export")
-                else Gtk.Image.new_from_icon_name(icon_name)
-            )
+            if tooltip in ("Open in Editor", "Export"):
+                btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                btn_box.append(Gtk.Image.new_from_icon_name(icon_name))
+                btn_box.append(Gtk.Label(label=tooltip))
+                btn.set_child(btn_box)
+            else:
+                btn.set_child(Gtk.Image.new_from_icon_name(icon_name))
             btn.add_css_class("flat")
             btn._entry = entry
             btn.connect("clicked", callback)
@@ -172,14 +164,14 @@ class ConfigPageBuilder:
 
     def _on_open_directory(self, btn):
         entry = btn._entry
-        parent = str(entry.path.parent)
+        parent = os.path.dirname(entry.path)
         launcher = Gtk.FileLauncher.new(Gio.File.new_for_path(parent))
         launcher.launch(self._window, None, None)
 
     def _on_export(self, btn):
         entry = btn._entry
         dialog = Gtk.FileDialog()
-        dialog.set_initial_name(entry.path.name)
+        dialog.set_initial_name(os.path.basename(entry.path))
         dialog.save(self._window, None, self._on_export_finish, entry)
 
     def _on_export_finish(self, dialog, result, entry):
@@ -194,7 +186,8 @@ class ConfigPageBuilder:
     def _on_view_raw(self, btn):
         entry = btn._entry
         try:
-            content = entry.path.read_text(errors="replace")
+            with open(entry.path, "r", errors="replace") as _f:
+                content = _f.read()
         except OSError:
             content = "(unable to read file)"
 
@@ -317,10 +310,10 @@ class ConfigPageBuilder:
     def _build_notes(self, entry: DotfileEntry) -> Gtk.Widget:
         group = Adw.PreferencesGroup(title="Notes & Tags")
 
-        note = get_note(entry.path)
-        note_text = getattr(note, "text", "") if note else ""
-        tags = list(getattr(note, "tags", [])) if note else []
-        is_fav = getattr(note, "favorite", False) if note else False
+        note = get_note(entry.name)
+        note_text = note.note if note else ""
+        tags = list(note.tags) if note else []
+        is_fav = note.favorite if note else False
 
         # Favorite toggle
         fav_row = Adw.ActionRow(title="Favorite")
@@ -389,7 +382,7 @@ class ConfigPageBuilder:
         entry = btn._entry
         active = btn.get_active()
         btn.set_icon_name("starred-symbolic" if active else "non-starred-symbolic")
-        set_favorite(entry.path, active)
+        set_favorite(entry.name, active)
 
     def _on_note_text_changed(self, buf):
         entry = buf._entry
@@ -401,10 +394,10 @@ class ConfigPageBuilder:
             start = buf.get_start_iter()
             end = buf.get_end_iter()
             text = buf.get_text(start, end, False)
-            note = get_note(entry.path)
-            tags = list(getattr(note, "tags", [])) if note else []
-            fav = getattr(note, "favorite", False) if note else False
-            save_note(entry.path, DotfileNote(text=text, tags=tags, favorite=fav))
+            note = get_note(entry.name)
+            tags = list(note.tags)
+            fav = note.favorite
+            save_note(DotfileNote(name=entry.name, note=text, tags=tags, favorite=fav))
             self._debounce_sources.pop(key, None)
             return False
 
@@ -414,10 +407,10 @@ class ConfigPageBuilder:
         entry = btn._entry
         raw = btn._tag_entry.get_text()
         tags = [t.strip() for t in raw.split(",") if t.strip()]
-        note = get_note(entry.path)
-        text = getattr(note, "text", "") if note else ""
-        fav = getattr(note, "favorite", False) if note else False
-        save_note(entry.path, DotfileNote(text=text, tags=tags, favorite=fav))
+        note = get_note(entry.name)
+        text = note.note
+        fav = note.favorite
+        save_note(DotfileNote(name=entry.name, note=text, tags=tags, favorite=fav))
 
     # ------------------------------------------------------------------
     # Backup history
@@ -478,20 +471,20 @@ class ConfigPageBuilder:
         if parsed is None:
             row = Adw.ActionRow(title="Unable to parse configuration file")
             row.add_css_class("dim-label")
-            container.append(row)
+            container.add(row)
             return
 
         fields = getattr(parsed, "fields", [])
         if not fields:
             row = Adw.ActionRow(title="No configurable fields detected")
             row.add_css_class("dim-label")
-            container.append(row)
+            container.add(row)
             return
 
         for field in fields:
             row = self._create_field_row(field, parsed, entry)
             if row is not None:
-                container.append(row)
+                container.add(row)
 
     def _create_field_row(self, field: ConfigField, parsed: ParsedConfig,
                           entry: DotfileEntry) -> Adw.ActionRow | None:

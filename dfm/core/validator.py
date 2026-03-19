@@ -151,7 +151,6 @@ def _validate_ini(content: str) -> ValidationResult:
     errors = []
     warnings = []
 
-    bracket_depth = 0
     for i, line in enumerate(content.splitlines(), 1):
         stripped = line.strip()
         if not stripped or stripped.startswith(("#", ";")):
@@ -205,7 +204,7 @@ def _validate_xresources(content: str) -> ValidationResult:
             continue
 
         # Lines should match pattern: resource.name: value  or  *resource: value
-        if ":" not in stripped and not stripped.startswith("#"):
+        if ":" not in stripped:
             warnings.append(f"Line {i}: Expected 'resource: value' format")
 
     return ValidationResult(len(errors) == 0, errors, warnings)

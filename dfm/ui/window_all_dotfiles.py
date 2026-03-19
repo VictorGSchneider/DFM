@@ -1,8 +1,6 @@
 """All Dotfiles overview page - GTK4/Adwaita module for managing all dotfiles."""
 
 import os
-from pathlib import Path
-from enum import Enum, auto
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -11,22 +9,10 @@ from gi.repository import Gtk, Adw, GLib
 
 from dfm.core.scanner import DotfileEntry
 from dfm.core.conflicts import detect_conflicts
-from dfm.ui.window_sidebar import SortMode, SORT_LABELS, _categorize, _group_by_category, _sort_entries
-
-# Category icons mapping
-CATEGORY_ICONS = {
-    "Shells": "utilities-terminal-symbolic",
-    "Window Managers": "preferences-desktop-display-symbolic",
-    "Terminal Emulators": "utilities-terminal-symbolic",
-    "Status Bars": "preferences-desktop-display-symbolic",
-    "Launchers": "system-search-symbolic",
-    "Notifications": "preferences-system-notifications-symbolic",
-    "Editors": "text-editor-symbolic",
-    "Media": "multimedia-video-player-symbolic",
-    "Appearance": "preferences-desktop-theme-symbolic",
-    "Development": "utilities-terminal-symbolic",
-    "System": "preferences-system-symbolic",
-}
+from dfm.ui.window_sidebar import (
+    SortMode, SORT_LABELS, CATEGORY_ICONS,
+    _categorize, _group_by_category, _sort_entries,
+)
 
 
 class AllDotfilesPage:
