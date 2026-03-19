@@ -153,7 +153,7 @@ def get_dependencies(entry) -> list[Dependency]:
     seen = set()
 
     for key, dep_list in _DEPENDENCY_MAP.items():
-        if key in name_lower or key in display_lower:
+        if key == name_lower or key == display_lower:
             for pkg, desc, optional in dep_list:
                 if pkg not in seen:
                     seen.add(pkg)

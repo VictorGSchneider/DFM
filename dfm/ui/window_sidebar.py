@@ -340,7 +340,7 @@ class SidebarManager:
         box.set_margin_bottom(2)
 
         favorites = get_favorites()
-        if str(entry.path) in favorites:
+        if entry.name in favorites:
             star = Gtk.Image.new_from_icon_name("starred-symbolic")
             star.set_pixel_size(12)
             box.append(star)

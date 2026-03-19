@@ -105,14 +105,11 @@ class TextViewerDialog(Adw.Dialog):
         self.text_view.set_cursor_visible(False)
         self.text_view.set_monospace(True)
         self.text_view.set_wrap_mode(Gtk.WrapMode.NONE)
-        self.text_view.set_left_margin(16)
+        self.text_view.set_left_margin(8)
         self.text_view.set_right_margin(16)
         self.text_view.set_top_margin(12)
         self.text_view.set_bottom_margin(12)
         self.text_view.add_css_class("view")
-
-        # Line numbers via gutter simulation - use left margin
-        self.text_view.set_left_margin(8)
 
         scrolled.set_child(self.text_view)
         toolbar_view.set_content(scrolled)

@@ -16,7 +16,6 @@ import os
 import json
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -491,10 +490,10 @@ def pull_dotfiles() -> SyncStatus:
             dest = os.path.join(home, rel)
 
             try:
-                # Backup existing
+                # Backup existing using the backup system
                 if os.path.exists(dest):
-                    backup = dest + ".dfm_backup"
-                    shutil.copy2(dest, backup)
+                    from dfm.core.backup import create_backup
+                    create_backup(dest, reason="pull")
 
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 shutil.copy2(src, dest)
