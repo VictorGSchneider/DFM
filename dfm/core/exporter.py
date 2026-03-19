@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import asdict
 
-from dfm.scanner import DotfileEntry, scan_dotfiles
+from dfm.core.scanner import DotfileEntry, scan_dotfiles
 
 
 def export_dotfiles(entries: list[DotfileEntry], output_path: str,

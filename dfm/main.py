@@ -10,7 +10,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio
 
-from dfm.window import DfmWindow
+from dfm.ui.window import DfmWindow
 
 
 CSS = """
@@ -62,6 +62,69 @@ CSS = """
 .warning {
     color: @warning_color;
 }
+
+.breadcrumb {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+.diff-add {
+    color: #a6e3a1;
+}
+
+.diff-del {
+    color: #f38ba8;
+}
+
+.diff-header {
+    color: #89b4fa;
+    font-weight: bold;
+}
+
+.conflict-warning {
+    background-color: alpha(@warning_color, 0.1);
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.tag-chip {
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 0.85em;
+    background-color: alpha(@accent_bg_color, 0.15);
+}
+
+.favorite-star {
+    color: #f9e2af;
+}
+
+.badge-valid {
+    color: #a6e3a1;
+    font-weight: bold;
+    font-size: 0.85em;
+}
+
+.badge-warning {
+    color: #f9e2af;
+    font-weight: bold;
+    font-size: 0.85em;
+}
+
+.badge-error {
+    color: #f38ba8;
+    font-weight: bold;
+    font-size: 0.85em;
+}
+
+.search-entry {
+    margin: 4px 8px;
+}
+
+.monitor-bar {
+    background-color: alpha(@warning_color, 0.15);
+    padding: 6px 12px;
+    border-bottom: 1px solid alpha(@warning_color, 0.3);
+}
 """
 
 
@@ -76,6 +139,10 @@ class DfmApplication(Adw.Application):
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
+
+        # Force dark mode
+        style_manager = Adw.StyleManager.get_default()
+        style_manager.set_color_scheme(Adw.ColorScheme.FORCE_DARK)
 
         # Load CSS
         from gi.repository import Gdk

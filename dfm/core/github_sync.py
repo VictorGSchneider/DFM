@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 from dataclasses import dataclass
 
-from dfm.scanner import DotfileEntry
+from dfm.core.scanner import DotfileEntry
 
 
 @dataclass
@@ -123,6 +123,116 @@ def list_gists() -> list[dict]:
     except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
         pass
     return []
+
+
+def import_gist(gist_id: str, target_path: str) -> SyncStatus:
+    """Download a gist and save to target path.
+
+    Args:
+        gist_id: The gist ID or URL
+        target_path: Where to save the file
+    """
+    if not is_gh_authenticated():
+        return SyncStatus(
+            success=False,
+            message="Not authenticated. Run 'gh auth login' first.",
+        )
+
+    try:
+        # Get gist info
+        result = subprocess.run(
+            ["gh", "gist", "view", gist_id, "--json",
+             "files,description"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return SyncStatus(
+                success=False,
+                message=f"Failed to fetch gist: {result.stderr.strip()}",
+            )
+
+        data = json.loads(result.stdout)
+        files = data.get("files", [])
+        if not files:
+            return SyncStatus(success=False, message="Gist has no files")
+
+        # Get the raw content of the first file
+        first_file = files[0]
+        filename = first_file.get("filename", "config")
+
+        raw_result = subprocess.run(
+            ["gh", "gist", "view", gist_id, "--raw"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if raw_result.returncode != 0:
+            return SyncStatus(
+                success=False,
+                message=f"Failed to download gist content: {raw_result.stderr.strip()}",
+            )
+
+        # Backup existing file if present
+        if os.path.isfile(target_path):
+            from dfm.core.backup import create_backup
+            create_backup(target_path, reason="gist-import")
+
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w") as f:
+            f.write(raw_result.stdout)
+
+        return SyncStatus(
+            success=True,
+            message=f"Imported {filename} from gist to {target_path}",
+        )
+
+    except subprocess.TimeoutExpired:
+        return SyncStatus(success=False, message="Timed out fetching gist.")
+    except (json.JSONDecodeError, KeyError) as e:
+        return SyncStatus(success=False, message=f"Failed to parse gist: {e}")
+
+
+def get_commit_history(limit: int = 20) -> list[dict]:
+    """Get commit history from the dotfiles repo.
+
+    Returns list of dicts with keys: hash, short_hash, message, author, date, files_changed
+    """
+    repo_path = get_repo_path()
+    if not repo_path or not os.path.isdir(repo_path):
+        return []
+
+    try:
+        result = _run_git(
+            ["log", f"-{limit}", "--format=%H|%h|%s|%an|%cr|%ci"],
+            cwd=repo_path, timeout=10,
+        )
+        if result.returncode != 0:
+            return []
+
+        commits = []
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("|", 5)
+            if len(parts) >= 5:
+                # Get files changed for this commit
+                files_result = _run_git(
+                    ["diff-tree", "--no-commit-id", "--name-only", "-r",
+                     parts[0]],
+                    cwd=repo_path, timeout=5,
+                )
+                files = (files_result.stdout.strip().splitlines()
+                         if files_result.returncode == 0 else [])
+
+                commits.append({
+                    "hash": parts[0],
+                    "short_hash": parts[1],
+                    "message": parts[2],
+                    "author": parts[3],
+                    "relative_date": parts[4],
+                    "date": parts[5] if len(parts) > 5 else "",
+                    "files_changed": files,
+                })
+
+        return commits
+    except subprocess.TimeoutExpired:
+        return []
 
 
 # ── Repo Sync Operations ──────────────────────────────────────────
