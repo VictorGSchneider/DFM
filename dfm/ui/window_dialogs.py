@@ -54,7 +54,7 @@ def _make_dialog(title: str, width: int = 700, height: int = 500):
         dialog.set_content_width(width)
         dialog.set_content_height(height)
         return dialog
-    except Exception:
+    except (TypeError, AttributeError):
         # Fallback for older libadwaita without Adw.Dialog
         win = Adw.Window()
         win.set_title(title)
@@ -254,7 +254,11 @@ class ProfilesDialog:
     def _show_status(self, message: str) -> None:
         self._status_label.set_label(message)
         self._status_label.set_visible(True)
-        GLib.timeout_add(5000, lambda: self._status_label.set_visible(False))
+        GLib.timeout_add(5000, self._hide_status)
+
+    def _hide_status(self):
+        self._status_label.set_visible(False)
+        return False
 
     def _on_save_clicked(self, _btn: Gtk.Button) -> None:
         name = self._name_entry.get_text().strip()
@@ -437,7 +441,11 @@ class TemplatesDialog:
     def _show_status(self, message: str) -> None:
         self._status_label.set_label(message)
         self._status_label.set_visible(True)
-        GLib.timeout_add(5000, lambda: self._status_label.set_visible(False))
+        GLib.timeout_add(5000, self._hide_status)
+
+    def _hide_status(self):
+        self._status_label.set_visible(False)
+        return False
 
     def _on_install_clicked(self, btn: Gtk.Button) -> None:
         template = btn._template
@@ -469,10 +477,7 @@ class TemplatesDialog:
             "response", self._on_confirm_response, template
         )
 
-        if isinstance(self.dialog, Adw.Dialog):
-            confirm_dialog.present(self.dialog)
-        else:
-            confirm_dialog.present(self.dialog)
+        confirm_dialog.present(self.dialog)
 
     def _on_confirm_response(
         self, dialog, response: str, template: Template
@@ -597,7 +602,11 @@ class WizardDialog:
     def _show_status(self, message: str) -> None:
         self._status_label.set_label(message)
         self._status_label.set_visible(True)
-        GLib.timeout_add(5000, lambda: self._status_label.set_visible(False))
+        GLib.timeout_add(5000, self._hide_status)
+
+    def _hide_status(self):
+        self._status_label.set_visible(False)
+        return False
 
     def _on_generate_clicked(self, btn: Gtk.Button) -> None:
         app = btn._wizard_app
@@ -759,9 +768,12 @@ class DiffViewerDialog:
         clipboard = Gdk.Display.get_default().get_clipboard()
         clipboard.set(self.diff_text)
         btn.set_icon_name("emblem-ok-symbolic")
-        GLib.timeout_add(
-            1500, lambda: btn.set_icon_name("edit-copy-symbolic")
-        )
+
+        def _restore_icon():
+            btn.set_icon_name("edit-copy-symbolic")
+            return False
+
+        GLib.timeout_add(1500, _restore_icon)
 
     def present(self) -> None:
         _present_dialog(self.dialog, self.parent_window)
@@ -903,7 +915,11 @@ class BackupHistoryDialog:
     def _show_status(self, message: str) -> None:
         self._status_label.set_label(message)
         self._status_label.set_visible(True)
-        GLib.timeout_add(5000, lambda: self._status_label.set_visible(False))
+        GLib.timeout_add(5000, self._hide_status)
+
+    def _hide_status(self):
+        self._status_label.set_visible(False)
+        return False
 
     def _on_view_diff_clicked(self, btn: Gtk.Button) -> None:
         backup = btn._backup
@@ -943,10 +959,7 @@ class BackupHistoryDialog:
             "response", self._on_restore_response, backup
         )
 
-        if isinstance(self.dialog, Adw.Dialog):
-            confirm_dialog.present(self.dialog)
-        else:
-            confirm_dialog.present(self.dialog)
+        confirm_dialog.present(self.dialog)
 
     def _on_restore_response(
         self, dialog, response: str, backup: BackupEntry

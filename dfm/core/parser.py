@@ -83,6 +83,8 @@ def parse_config(filepath: str) -> ParsedConfig:
         fields = _parse_ini(content)
     elif file_format == "toml":
         fields = _parse_toml(content)
+    elif file_format == "yaml":
+        fields = _parse_yaml(content)
     elif file_format == "xresources":
         fields = _parse_xresources(content)
     elif file_format == "i3":
@@ -161,9 +163,6 @@ def _infer_field_type(key: str, value: str) -> FieldType:
     # Color
     if COLOR_PATTERN.match(value.strip()):
         return FieldType.COLOR
-    if "color" in key_lower or "colour" in key_lower:
-        if COLOR_PATTERN.match(value.strip()):
-            return FieldType.COLOR
 
     # Numeric / Slider
     try:
@@ -264,9 +263,128 @@ def _parse_ini(content: str) -> list[ConfigField]:
 
 
 def _parse_toml(content: str) -> list[ConfigField]:
-    """Parse TOML-style config (simplified)."""
-    # Reuse INI parser as TOML is a superset for basic cases
+    """Parse TOML config files using tomllib/tomli when available."""
+    try:
+        import tomllib
+        data = tomllib.loads(content)
+        return _toml_to_fields(data)
+    except ImportError:
+        pass
+    try:
+        import tomli
+        data = tomli.loads(content)
+        return _toml_to_fields(data)
+    except ImportError:
+        pass
+    # Fallback: reuse INI parser for basic key=value cases
     return _parse_ini(content)
+
+
+def _toml_to_fields(data: dict, prefix: str = "",
+                    section: str = "General") -> list[ConfigField]:
+    """Convert parsed TOML dict into ConfigField list."""
+    fields = []
+    for key, value in data.items():
+        full_key = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            fields.append(ConfigField(
+                key=full_key,
+                display_name=_make_display_name(key),
+                value="",
+                field_type=FieldType.COMMENT,
+                section=key.title(),
+            ))
+            fields.extend(_toml_to_fields(value, full_key, key.title()))
+        elif isinstance(value, list):
+            fields.append(ConfigField(
+                key=full_key,
+                display_name=_make_display_name(key),
+                value=json.dumps(value),
+                field_type=FieldType.MULTILINE,
+                section=section,
+            ))
+        elif isinstance(value, bool):
+            fields.append(ConfigField(
+                key=full_key,
+                display_name=_make_display_name(key),
+                value=str(value).lower(),
+                field_type=FieldType.TOGGLE,
+                section=section,
+            ))
+        elif isinstance(value, (int, float)):
+            fields.append(ConfigField(
+                key=full_key,
+                display_name=_make_display_name(key),
+                value=str(value),
+                field_type=FieldType.TEXT,
+                section=section,
+            ))
+        else:
+            fields.append(ConfigField(
+                key=full_key,
+                display_name=_make_display_name(key),
+                value=str(value),
+                field_type=FieldType.TEXT,
+                section=section,
+            ))
+    return fields
+
+
+def _parse_yaml(content: str) -> list[ConfigField]:
+    """Parse YAML config files using PyYAML when available."""
+    try:
+        import yaml
+        data = yaml.safe_load(content)
+        if isinstance(data, dict):
+            return _yaml_to_fields(data)
+        elif isinstance(data, list):
+            return _yaml_to_fields({"items": data})
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    # Fallback: use generic parser for key: value lines
+    return _parse_generic(content)
+
+
+def _yaml_to_fields(data: dict, prefix: str = "",
+                    section: str = "General") -> list[ConfigField]:
+    """Convert parsed YAML dict into ConfigField list."""
+    fields = []
+    for key, value in data.items():
+        full_key = f"{prefix}.{key}" if prefix else str(key)
+        display = _make_display_name(str(key))
+        if isinstance(value, dict):
+            fields.append(ConfigField(
+                key=full_key, display_name=display, value="",
+                field_type=FieldType.COMMENT, section=str(key).title(),
+            ))
+            fields.extend(_yaml_to_fields(value, full_key, str(key).title()))
+        elif isinstance(value, list):
+            fields.append(ConfigField(
+                key=full_key, display_name=display,
+                value=json.dumps(value),
+                field_type=FieldType.MULTILINE, section=section,
+            ))
+        elif isinstance(value, bool):
+            fields.append(ConfigField(
+                key=full_key, display_name=display,
+                value=str(value).lower(),
+                field_type=FieldType.TOGGLE, section=section,
+            ))
+        elif isinstance(value, (int, float)):
+            fields.append(ConfigField(
+                key=full_key, display_name=display,
+                value=str(value),
+                field_type=FieldType.TEXT, section=section,
+            ))
+        else:
+            fields.append(ConfigField(
+                key=full_key, display_name=display,
+                value=str(value) if value is not None else "",
+                field_type=FieldType.TEXT, section=section,
+            ))
+    return fields
 
 
 def _parse_shell(content: str) -> list[ConfigField]:
@@ -474,6 +592,8 @@ def _parse_i3_like(content: str) -> list[ConfigField]:
                         line_number=line_num,
                         original_line=line,
                     ))
+                    comment_buffer = ""
+                    continue
             comment_buffer = inner
             continue
 
@@ -558,6 +678,20 @@ def _parse_json(content: str) -> list[ConfigField]:
 def _flatten_json(data: dict | list, fields: list[ConfigField], prefix: str,
                   section: str = "General") -> None:
     """Flatten a JSON structure into config fields."""
+    if isinstance(data, list):
+        for i, item in enumerate(data):
+            item_key = f"{prefix}[{i}]" if prefix else f"[{i}]"
+            if isinstance(item, dict):
+                _flatten_json(item, fields, item_key, section)
+            else:
+                fields.append(ConfigField(
+                    key=item_key,
+                    display_name=f"Item {i}",
+                    value=json.dumps(item) if not isinstance(item, str) else item,
+                    field_type=FieldType.TEXT,
+                    section=section,
+                ))
+        return
     if isinstance(data, dict):
         for key, value in data.items():
             full_key = f"{prefix}.{key}" if prefix else key

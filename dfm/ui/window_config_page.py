@@ -180,8 +180,11 @@ class ConfigPageBuilder:
             if dest:
                 import shutil
                 shutil.copy2(str(entry.path), dest.get_path())
-        except GLib.Error:
-            pass
+        except GLib.Error as e:
+            # User cancelled — not an error
+            if e.code != 2:
+                import sys
+                print(f"DFM export error: {e}", file=sys.stderr)
 
     def _on_view_raw(self, btn):
         entry = btn._entry
@@ -634,9 +637,9 @@ class ConfigPageBuilder:
         field = row._field
         entry = row._entry
         parsed = row._parsed
-        new_val = BOOL_TRUE[0] if row.get_active() else BOOL_FALSE[0]
+        new_val = "true" if row.get_active() else "false"
         create_backup(str(entry.path), "edit")
-        update_config_value(entry.path, parsed, field, new_val)
+        update_config_value(entry.path, field, new_val)
 
     def _on_scale_changed(self, scale):
         field = scale._field
@@ -649,7 +652,7 @@ class ConfigPageBuilder:
 
         def _save():
             create_backup(str(entry.path), "edit")
-            update_config_value(entry.path, parsed, field, new_val)
+            update_config_value(entry.path, field, new_val)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -664,7 +667,7 @@ class ConfigPageBuilder:
             int(rgba.red * 255), int(rgba.green * 255), int(rgba.blue * 255)
         )
         create_backup(str(entry.path), "edit")
-        update_config_value(entry.path, parsed, field, hex_color)
+        update_config_value(entry.path, field, hex_color)
 
     def _on_spin_changed(self, spin):
         field = spin._field
@@ -677,7 +680,7 @@ class ConfigPageBuilder:
 
         def _save():
             create_backup(str(entry.path), "edit")
-            update_config_value(entry.path, parsed, field, new_val)
+            update_config_value(entry.path, field, new_val)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -694,7 +697,7 @@ class ConfigPageBuilder:
 
         def _save():
             create_backup(str(entry.path), "edit")
-            update_config_value(entry.path, parsed, field, new_val)
+            update_config_value(entry.path, field, new_val)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -713,5 +716,7 @@ class ConfigPageBuilder:
             f = dialog.open_finish(result)
             if f:
                 path_entry.set_text(f.get_path())
-        except GLib.Error:
-            pass
+        except GLib.Error as e:
+            if e.code != 2:
+                import sys
+                print(f"DFM browse error: {e}", file=sys.stderr)
