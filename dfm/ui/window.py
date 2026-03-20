@@ -18,6 +18,7 @@ from dfm.ui.window_sync import SyncSection
 from dfm.ui.window_dialogs import (
     ProfilesDialog, TemplatesDialog, WizardDialog,
 )
+from dfm.ui.window_analyzer import AnalyzerPage
 from dfm.core.github_sync import (
     is_gh_available, is_gh_authenticated,
     upload_gist, get_repo_path,
@@ -40,7 +41,8 @@ class DfmWindow(Adw.ApplicationWindow):
 
         # Sub-modules
         self._sidebar = SidebarManager(
-            on_entry_selected=self._on_entry_selected
+            on_entry_selected=self._on_entry_selected,
+            on_analyzer_selected=self._on_analyzer_selected,
         )
         self._all_dotfiles_page = AllDotfilesPage(
             on_dotfile_toggled_cb=self._on_dotfile_toggled
@@ -50,6 +52,9 @@ class DfmWindow(Adw.ApplicationWindow):
             window=self,
             get_dotfiles_cb=lambda: self.dotfiles,
             on_rescan_cb=self._scan_and_populate,
+        )
+        self._analyzer_page = AnalyzerPage(
+            on_navigate_to_entry=self._on_entry_selected,
         )
 
         self._build_ui()
@@ -79,6 +84,7 @@ class DfmWindow(Adw.ApplicationWindow):
         menu.append("Rescan Dotfiles", "win.rescan")
 
         tools_section = Gio.Menu()
+        tools_section.append("Analyzer & Debugger", "win.analyzer")
         tools_section.append("Profiles...", "win.profiles")
         tools_section.append("Templates...", "win.templates")
         tools_section.append("Dotfile Wizard...", "win.wizard")
@@ -146,6 +152,7 @@ class DfmWindow(Adw.ApplicationWindow):
         """Register window actions."""
         actions = {
             "rescan": lambda *_: self._scan_and_populate(),
+            "analyzer": lambda *_: self._on_analyzer_selected(),
             "import": lambda *_: self._on_import_clicked(None),
             "export-all": lambda *_: self._on_export_clicked(None),
             "push": lambda *_: self._on_push_clicked(None),
@@ -176,6 +183,10 @@ class DfmWindow(Adw.ApplicationWindow):
         # Build All Dotfiles page (includes sync section)
         all_page = self._build_all_dotfiles_combined()
         self.content_stack.add_named(all_page, "all-dotfiles")
+
+        # Build Analyzer page
+        analyzer_widget = self._analyzer_page.build(self.dotfiles)
+        self.content_stack.add_named(analyzer_widget, "analyzer")
 
         # Build each config page
         for entry in self.dotfiles:
@@ -214,6 +225,11 @@ class DfmWindow(Adw.ApplicationWindow):
         else:
             self.content_stack.set_visible_child_name(entry.name)
             self.current_entry = entry
+
+    def _on_analyzer_selected(self) -> None:
+        """Show the analyzer page."""
+        self.content_stack.set_visible_child_name("analyzer")
+        self.current_entry = None
 
     def _on_dotfile_toggled(self, entry: DotfileEntry,
                             new_state: bool) -> None:

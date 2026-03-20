@@ -228,6 +228,62 @@ separator {
     padding: 6px 12px;
     border-bottom: 1px solid alpha(@stoa_gold, 0.3);
 }
+
+/* ── Analyzer ── */
+.analyzer-card {
+    background-color: @stoa_bg_light;
+    border-radius: 8px;
+    padding: 12px 20px;
+    min-width: 80px;
+}
+
+.analyzer-card-value {
+    font-size: 1.6em;
+    font-weight: 800;
+}
+
+.analyzer-error {
+    color: @stoa_terracotta;
+}
+
+.analyzer-warning {
+    color: @stoa_gold;
+}
+
+.analyzer-info {
+    color: @stoa_azure;
+}
+
+.analyzer-ok {
+    color: @stoa_olive;
+}
+
+.analyzer-stat {
+    color: @stoa_fg;
+}
+
+.analyzer-badge {
+    font-size: 0.8em;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 10px;
+    min-width: 20px;
+}
+
+.analyzer-badge.analyzer-error {
+    background-color: alpha(@stoa_terracotta, 0.2);
+    color: @stoa_terracotta;
+}
+
+.analyzer-badge.analyzer-warning {
+    background-color: alpha(@stoa_gold, 0.2);
+    color: @stoa_gold;
+}
+
+.analyzer-badge.analyzer-info {
+    background-color: alpha(@stoa_azure, 0.2);
+    color: @stoa_azure;
+}
 """
 
 
