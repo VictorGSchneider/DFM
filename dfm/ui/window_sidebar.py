@@ -203,8 +203,9 @@ class SidebarManager:
         all_row = self._make_all_dotfiles_row()
         self._tree_box.append(all_row)
 
-        # Favorites section
-        favorites = get_favorites()
+        # Favorites section (read once, not per-row)
+        self._cached_favorites = set(get_favorites())
+        favorites = self._cached_favorites
         fav_entries = [e for e in sorted_entries if e.name in favorites]
         if fav_entries:
             fav_header = self._make_category_header(
@@ -339,7 +340,8 @@ class SidebarManager:
         box.set_margin_top(2)
         box.set_margin_bottom(2)
 
-        favorites = get_favorites()
+        # Use cached favorites from _rebuild_tree instead of reading file per row
+        favorites = getattr(self, '_cached_favorites', set())
         if entry.name in favorites:
             star = Gtk.Image.new_from_icon_name("starred-symbolic")
             star.set_pixel_size(12)

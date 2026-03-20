@@ -265,7 +265,10 @@ class TextViewerDialog(Adw.Dialog):
 
         # Brief visual feedback
         _btn.set_icon_name("emblem-ok-symbolic")
-        GLib.timeout_add(1500, lambda: _btn.set_icon_name("edit-copy-symbolic"))
+        def _restore_icon():
+            _btn.set_icon_name("edit-copy-symbolic")
+            return False
+        GLib.timeout_add(1500, _restore_icon)
 
     def _on_reload(self, _btn: Gtk.Button) -> None:
         """Reload the file."""

@@ -443,7 +443,7 @@ class SyncSection:
         if overwrite_files:
             lines.append(
                 f"{len(overwrite_files)} file(s) will be overwritten "
-                "(backups created with .dfm_backup):"
+                "(backups created automatically):"
             )
             for f in overwrite_files[:15]:
                 lines.append(f"  \u25cf  {f}")

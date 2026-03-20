@@ -159,19 +159,24 @@ class ConfigPageBuilder:
 
     def _on_open_editor(self, btn):
         entry = btn._entry
-        launcher = Gtk.FileLauncher.new(Gio.File.new_for_path(str(entry.path)))
+        config_path = entry.get_config_path() or entry.path
+        launcher = Gtk.FileLauncher.new(Gio.File.new_for_path(str(config_path)))
         launcher.launch(self._window, None, None)
 
     def _on_open_directory(self, btn):
         entry = btn._entry
-        parent = os.path.dirname(entry.path)
+        if entry.is_directory:
+            parent = entry.path
+        else:
+            parent = os.path.dirname(entry.path)
         launcher = Gtk.FileLauncher.new(Gio.File.new_for_path(parent))
         launcher.launch(self._window, None, None)
 
     def _on_export(self, btn):
         entry = btn._entry
+        config_path = entry.get_config_path() or entry.path
         dialog = Gtk.FileDialog()
-        dialog.set_initial_name(os.path.basename(entry.path))
+        dialog.set_initial_name(os.path.basename(config_path))
         dialog.save(self._window, None, self._on_export_finish, entry)
 
     def _on_export_finish(self, dialog, result, entry):
@@ -179,7 +184,8 @@ class ConfigPageBuilder:
             dest = dialog.save_finish(result)
             if dest:
                 import shutil
-                shutil.copy2(str(entry.path), dest.get_path())
+                config_path = entry.get_config_path() or entry.path
+                shutil.copy2(str(config_path), dest.get_path())
         except GLib.Error as e:
             # User cancelled — not an error
             if e.code != 2:
@@ -188,8 +194,9 @@ class ConfigPageBuilder:
 
     def _on_view_raw(self, btn):
         entry = btn._entry
+        config_path = entry.get_config_path() or entry.path
         try:
-            with open(entry.path, "r", errors="replace") as _f:
+            with open(config_path, "r", errors="replace") as _f:
                 content = _f.read()
         except OSError:
             content = "(unable to read file)"
@@ -470,12 +477,8 @@ class ConfigPageBuilder:
     # ------------------------------------------------------------------
 
     def _populate_fields(self, container, entry: DotfileEntry):
-        parsed = parse_config(entry.path)
-        if parsed is None:
-            row = Adw.ActionRow(title="Unable to parse configuration file")
-            row.add_css_class("dim-label")
-            container.add(row)
-            return
+        config_path = entry.get_config_path() or entry.path
+        parsed = parse_config(config_path)
 
         fields = getattr(parsed, "fields", [])
         if not fields:
@@ -494,7 +497,7 @@ class ConfigPageBuilder:
         ftype = field.field_type if hasattr(field, "field_type") else getattr(field, "type", None)
         key = field.key
         value = field.value
-        description = getattr(field, "description", "") or ""
+        description = getattr(field, "comment", "") or ""
 
         # TOGGLE
         if ftype == FieldType.TOGGLE:
@@ -637,22 +640,33 @@ class ConfigPageBuilder:
         field = row._field
         entry = row._entry
         parsed = row._parsed
+        config_path = entry.get_config_path() or entry.path
         new_val = "true" if row.get_active() else "false"
-        create_backup(str(entry.path), "edit")
-        update_config_value(entry.path, field, new_val)
+        key = f"toggle-{id(row)}"
+        if key in self._debounce_sources:
+            GLib.source_remove(self._debounce_sources[key])
+
+        def _save():
+            create_backup(str(config_path), "edit")
+            update_config_value(config_path, field, new_val)
+            self._debounce_sources.pop(key, None)
+            return False
+
+        self._debounce_sources[key] = GLib.timeout_add(300, _save)
 
     def _on_scale_changed(self, scale):
         field = scale._field
         entry = scale._entry
         parsed = scale._parsed
+        config_path = entry.get_config_path() or entry.path
         new_val = str(scale.get_value())
         key = f"scale-{id(scale)}"
         if key in self._debounce_sources:
             GLib.source_remove(self._debounce_sources[key])
 
         def _save():
-            create_backup(str(entry.path), "edit")
-            update_config_value(entry.path, field, new_val)
+            create_backup(str(config_path), "edit")
+            update_config_value(config_path, field, new_val)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -662,25 +676,36 @@ class ConfigPageBuilder:
         field = btn._field
         entry = btn._entry
         parsed = btn._parsed
+        config_path = entry.get_config_path() or entry.path
         rgba = btn.get_rgba()
         hex_color = "#{:02x}{:02x}{:02x}".format(
             int(rgba.red * 255), int(rgba.green * 255), int(rgba.blue * 255)
         )
-        create_backup(str(entry.path), "edit")
-        update_config_value(entry.path, field, hex_color)
+        key = f"color-{id(btn)}"
+        if key in self._debounce_sources:
+            GLib.source_remove(self._debounce_sources[key])
+
+        def _save():
+            create_backup(str(config_path), "edit")
+            update_config_value(config_path, field, hex_color)
+            self._debounce_sources.pop(key, None)
+            return False
+
+        self._debounce_sources[key] = GLib.timeout_add(500, _save)
 
     def _on_spin_changed(self, spin):
         field = spin._field
         entry = spin._entry
         parsed = spin._parsed
+        config_path = entry.get_config_path() or entry.path
         new_val = str(spin.get_value())
         key = f"spin-{id(spin)}"
         if key in self._debounce_sources:
             GLib.source_remove(self._debounce_sources[key])
 
         def _save():
-            create_backup(str(entry.path), "edit")
-            update_config_value(entry.path, field, new_val)
+            create_backup(str(config_path), "edit")
+            update_config_value(config_path, field, new_val)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -690,14 +715,15 @@ class ConfigPageBuilder:
         field = widget._field
         entry = widget._entry
         parsed = widget._parsed
+        config_path = entry.get_config_path() or entry.path
         new_val = widget.get_text()
         key = f"text-{id(widget)}"
         if key in self._debounce_sources:
             GLib.source_remove(self._debounce_sources[key])
 
         def _save():
-            create_backup(str(entry.path), "edit")
-            update_config_value(entry.path, field, new_val)
+            create_backup(str(config_path), "edit")
+            update_config_value(config_path, field, new_val)
             self._debounce_sources.pop(key, None)
             return False
 
