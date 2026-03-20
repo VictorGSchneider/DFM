@@ -24,6 +24,9 @@ A GTK4/Adwaita GUI application for managing dotfiles on Arch Linux.
 <!-- ![GitHub Sync](screenshots/github-sync.png) -->
 *GitHub Sync — push/pull dotfiles to a GitHub repo, share as Gist*
 
+<!-- ![Analyzer](screenshots/analyzer.png) -->
+*Analyzer & Debugger — unified diagnostics for all dotfiles with severity badges and fix hints*
+
 > **Nota:** substitua os placeholders acima pelas screenshots reais. Salve as imagens em `screenshots/` e descomente as linhas `![...]`.
 
 ## Features
@@ -68,11 +71,36 @@ Built-in viewer for inspecting dotfiles without leaving the app:
 - Built-in templates for common setups
 - Configuration wizard for quick initial setup
 
-### Validation & Monitoring
+### Analyzer & Debugger
 
-- Syntax validation for known config formats
-- Conflict detection when multiple tools touch the same file
-- File change monitoring to detect external edits
+A dedicated diagnostics page that scans all your dotfiles at once and reports issues grouped by severity (errors, warnings, info). Accessible from the sidebar or the Tools menu.
+
+**Per-file checks:**
+- Syntax validation for known formats (JSON, TOML, YAML, INI, shell, Xresources)
+- Broken symlinks and missing referenced files (`source ~/.zsh_custom` pointing to nothing)
+- Duplicate keys that silently shadow earlier values
+- Empty values that may be unintentional
+- Insecure permissions on sensitive files (world-readable `.netrc`, etc.)
+- Deprecated or problematic patterns (double PATH append, eval ssh-agent)
+- Missing required and optional package dependencies (checked via pacman)
+
+**Cross-file conflict detection:**
+- Environment variables set to different values across shells (e.g. `EDITOR` in `.bashrc` vs `.zshrc`)
+- Aliases defined differently in multiple shell configs
+- Multiple window managers enabled simultaneously (i3 + Hyprland)
+- Multiple notification daemons active (Dunst + Mako)
+- Multiple status bars enabled (Waybar + Polybar)
+
+**UI features:**
+- Summary cards showing total files scanned, errors, warnings, and healthy count
+- Color-coded severity badges (terracotta for errors, gold for warnings, azure for info)
+- Fix hints with one-click copy (e.g. `sudo pacman -S hyprland`, `chmod 600 ~/.netrc`)
+- Navigate directly from an issue to the dotfile's config page
+
+### File Change Monitoring
+
+- Real-time detection of external edits to tracked dotfiles
+- Toast notifications with one-click reload
 
 ### GitHub Sync
 
@@ -90,11 +118,13 @@ All GitHub features use the `gh` CLI for authentication, so no tokens are stored
 
 Export your dotfiles as a `.tar.gz` archive with a manifest and import them on another machine. Existing files are backed up before overwriting.
 
-### GNOME Settings-Inspired UI
+### Stoa-Themed UI
 
-- Sidebar navigation listing all detected dotfiles with icons
+- Classical dark theme inspired by [Stoa Linux](https://github.com/VictorGSchneider/StoaLinux) — marble, bronze, parchment, and stone tones
+- Sidebar navigation listing all detected dotfiles with icons and categories
 - Right panel with configuration fields grouped by section
 - **All Dotfiles** overview page with toggle switches, grouped by category
+- **Analyzer & Debugger** page for unified diagnostics
 - GitHub Sync status and controls integrated into the overview page
 
 ## Supported Dotfiles
@@ -159,6 +189,7 @@ dfm/
 │   ├── wizard.py          # Initial setup wizard
 │   ├── validator.py       # Syntax validation for config files
 │   ├── conflicts.py       # Conflict detection between configs
+│   ├── analyzer.py        # Unified analyzer (syntax, refs, dupes, deps, security)
 │   ├── monitor.py         # File change monitoring
 │   ├── diff_utils.py      # Diff utilities for comparing versions
 │   ├── notes.py           # Per-dotfile user notes
@@ -170,10 +201,10 @@ dfm/
     ├── window_sidebar.py   # Sidebar navigation
     ├── window_config_page.py # Smart config editing page
     ├── window_all_dotfiles.py # All Dotfiles overview page
+    ├── window_analyzer.py  # Analyzer & Debugger diagnostics page
     ├── window_dialogs.py   # Dialogs (backup, profiles, templates, etc.)
     ├── window_sync.py      # GitHub sync UI
-    ├── viewer.py           # In-app raw text viewer with syntax highlighting
-    └── style.css           # Additional styles
+    └── viewer.py           # In-app raw text viewer with syntax highlighting
 ```
 
 ## How It Works
@@ -181,8 +212,9 @@ dfm/
 1. **Scan** — DFM scans `~/` and `~/.config/` for known dotfiles
 2. **Parse** — Each file is analyzed to infer field types (booleans, numbers, colors, paths, etc.)
 3. **Display** — A GUI is generated with appropriate widgets for each field
-4. **Edit** — Changes are written directly to the original file (backup created first)
-5. **Sync** (optional) — Copies to `~/.dotfiles` for GitHub push/pull
+4. **Analyze** — The Analyzer checks syntax, references, duplicates, dependencies, permissions, and cross-file conflicts
+5. **Edit** — Changes are written directly to the original file (backup created first)
+6. **Sync** (optional) — Copies to `~/.dotfiles` for GitHub push/pull
 
 Your dotfiles never leave home.
 
