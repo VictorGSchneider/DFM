@@ -55,7 +55,8 @@ class DotfileMonitor:
         Callback receives (file_path: str, change_type: str).
         change_type is one of: "modified", "deleted", "created".
         """
-        self._callbacks.append(callback)
+        with self._lock:
+            self._callbacks.append(callback)
 
     def start(self) -> None:
         """Start the monitor thread."""
@@ -111,10 +112,14 @@ class DotfileMonitor:
         """Background polling loop."""
         while self._running:
             changes = self.check_now()
+            with self._lock:
+                callbacks = list(self._callbacks)
             for path, change_type in changes:
-                for cb in self._callbacks:
+                for cb in callbacks:
                     try:
                         cb(path, change_type)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        import sys
+                        print(f"DFM monitor callback error: {exc}",
+                              file=sys.stderr)
             time.sleep(self._poll_interval)

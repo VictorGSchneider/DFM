@@ -45,7 +45,8 @@ class DfmWindow(Adw.ApplicationWindow):
             on_analyzer_selected=self._on_analyzer_selected,
         )
         self._all_dotfiles_page = AllDotfilesPage(
-            on_dotfile_toggled_cb=self._on_dotfile_toggled
+            on_dotfile_toggled_cb=self._on_dotfile_toggled,
+            on_rescan_cb=self._scan_and_populate,
         )
         self._config_builder = ConfigPageBuilder(window=self)
         self._sync_section = SyncSection(
@@ -191,7 +192,12 @@ class DfmWindow(Adw.ApplicationWindow):
         # Build each config page
         for entry in self.dotfiles:
             page = self._config_builder.build(entry)
-            self.content_stack.add_named(page, entry.name)
+            stack_name = entry.name
+            if stack_name in seen_names:
+                stack_name = f"{entry.name}_{id(entry)}"
+            seen_names.add(stack_name)
+            entry._stack_name = stack_name
+            self.content_stack.add_named(page, stack_name)
 
         # Populate sidebar
         self._sidebar.populate(self.dotfiles)
@@ -223,7 +229,8 @@ class DfmWindow(Adw.ApplicationWindow):
             self.content_stack.set_visible_child_name("all-dotfiles")
             self.current_entry = None
         else:
-            self.content_stack.set_visible_child_name(entry.name)
+            stack_name = getattr(entry, '_stack_name', entry.name)
+            self.content_stack.set_visible_child_name(stack_name)
             self.current_entry = entry
 
     def _on_analyzer_selected(self) -> None:
@@ -383,8 +390,11 @@ class DfmWindow(Adw.ApplicationWindow):
                 confirm.connect("response", self._on_import_confirmed,
                                 archive_path)
                 confirm.present(self)
-        except GLib.Error:
-            pass
+        except GLib.Error as e:
+            # User cancelled the dialog — not an error
+            if e.code != 2:  # 2 = GTK_DIALOG_ERROR_DISMISSED
+                import sys
+                print(f"DFM import dialog error: {e}", file=sys.stderr)
 
     def _on_import_confirmed(self, dialog, response, archive_path):
         if response == "import":
@@ -423,8 +433,10 @@ class DfmWindow(Adw.ApplicationWindow):
                 archive = export_dotfiles(entries, output_dir)
                 toast = Adw.Toast.new(f"Exported to {archive}")
                 self._toast_overlay.add_toast(toast)
-        except GLib.Error:
-            pass
+        except GLib.Error as e:
+            if e.code != 2:
+                import sys
+                print(f"DFM export dialog error: {e}", file=sys.stderr)
 
     # ── Helpers ──────────────────────────────────────────────────────
 

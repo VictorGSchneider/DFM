@@ -148,9 +148,8 @@ def get_diff(file_path: str, backup: BackupEntry) -> str:
         old_lines, new_lines,
         fromfile=f"backup ({backup.display_time})",
         tofile="current",
-        lineterm="",
     )
-    return "\n".join(diff)
+    return "".join(diff)
 
 
 def _save_metadata(backup_dir: Path, entry: BackupEntry) -> None:

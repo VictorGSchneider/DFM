@@ -1,8 +1,6 @@
 """All Dotfiles overview page - GTK4/Adwaita module for managing all dotfiles."""
 
 import os
-from pathlib import Path
-from enum import Enum, auto
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -11,35 +9,25 @@ from gi.repository import Gtk, Adw, GLib
 
 from dfm.core.scanner import DotfileEntry
 from dfm.core.conflicts import detect_conflicts
-from dfm.ui.window_sidebar import SortMode, SORT_LABELS, _categorize, _group_by_category, _sort_entries
-
-# Category icons mapping
-CATEGORY_ICONS = {
-    "Shells": "utilities-terminal-symbolic",
-    "Window Managers": "preferences-desktop-display-symbolic",
-    "Terminal Emulators": "utilities-terminal-symbolic",
-    "Status Bars": "preferences-desktop-display-symbolic",
-    "Launchers": "system-search-symbolic",
-    "Notifications": "preferences-system-notifications-symbolic",
-    "Editors": "text-editor-symbolic",
-    "Media": "multimedia-video-player-symbolic",
-    "Appearance": "preferences-desktop-theme-symbolic",
-    "Development": "utilities-terminal-symbolic",
-    "System": "preferences-system-symbolic",
-}
+from dfm.ui.window_sidebar import (
+    SortMode, SORT_LABELS, CATEGORY_ICONS,
+    _categorize, _group_by_category, _sort_entries,
+)
 
 
 class AllDotfilesPage:
     """Overview page showing all dotfiles grouped by category with toggles."""
 
-    def __init__(self, on_dotfile_toggled_cb=None):
+    def __init__(self, on_dotfile_toggled_cb=None, on_rescan_cb=None):
         """Initialize the page.
 
         Args:
             on_dotfile_toggled_cb: Callback when any toggle changes.
                 Signature: (entry: DotfileEntry, new_state: bool) -> None
+            on_rescan_cb: Callback to trigger a full rescan from disk.
         """
         self._on_dotfile_toggled_cb = on_dotfile_toggled_cb
+        self._on_rescan_cb = on_rescan_cb
         self._master_check: Gtk.CheckButton = Gtk.CheckButton()
         self._group_checks: dict[str, Gtk.CheckButton] = {}
         self._group_switch_rows: dict[str, list[Adw.SwitchRow]] = {}
@@ -500,5 +488,7 @@ class AllDotfilesPage:
 
     def _on_monitor_refresh_clicked(self, _banner: Adw.Banner) -> None:
         """Handle refresh button click on the monitor notification bar."""
-        # Trigger a rebuild; the caller should re-scan and call rebuild()
-        self.rebuild(self.dotfiles)
+        if self._on_rescan_cb is not None:
+            self._on_rescan_cb()
+        else:
+            self.rebuild(self.dotfiles)

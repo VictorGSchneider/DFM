@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import asdict
 
-from dfm.core.scanner import DotfileEntry, scan_dotfiles
+from dfm.core.scanner import DotfileEntry
 
 
 def export_dotfiles(entries: list[DotfileEntry], output_path: str,
@@ -144,8 +144,11 @@ def _read_manifest(source_dir: str) -> dict | None:
     """Read manifest from an exported directory."""
     manifest_path = os.path.join(source_dir, "dfm_manifest.json")
     if os.path.isfile(manifest_path):
-        with open(manifest_path, "r") as f:
-            return json.load(f)
+        try:
+            with open(manifest_path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
     return None
 
 
@@ -159,6 +162,12 @@ def _plan_import(source_dir: str, manifest: dict | None,
             rel_path = entry["path"]
             source_path = os.path.join(source_dir, rel_path)
             target_path = os.path.join(target_home, rel_path)
+
+            # Guard against path traversal attacks
+            if not os.path.realpath(target_path).startswith(
+                os.path.realpath(target_home) + os.sep
+            ):
+                continue
 
             if not os.path.exists(source_path):
                 continue

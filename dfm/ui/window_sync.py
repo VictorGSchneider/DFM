@@ -691,23 +691,19 @@ class SyncSection:
     @staticmethod
     def _clear_group(group: Adw.PreferencesGroup) -> None:
         """Remove all rows from a PreferencesGroup."""
-        # Walk the group's children and remove Adw rows
-        while True:
-            child = group.get_first_child()
-            if child is None:
-                break
-            # The PreferencesGroup wraps rows inside a GtkListBox inside
-            # a GtkBox.  We need to find and remove the ActionRow /
-            # ExpanderRow objects via the public API.
-            # Using remove() on the first encountered listbox child.
-            found = False
-            node = child
-            while node is not None:
-                if isinstance(node, (Adw.ActionRow, Adw.ExpanderRow)):
-                    group.remove(node)
-                    found = True
-                    break
-                node = node.get_next_sibling()
-            if not found:
-                # Avoid infinite loop if structure is unexpected
-                break
+        # Collect all rows first, then remove them to avoid
+        # mutation-during-iteration issues.
+        rows = []
+
+        def _collect_rows(widget):
+            if isinstance(widget, (Adw.ActionRow, Adw.ExpanderRow)):
+                rows.append(widget)
+                return  # don't recurse into row children
+            child = widget.get_first_child()
+            while child is not None:
+                _collect_rows(child)
+                child = child.get_next_sibling()
+
+        _collect_rows(group)
+        for row in rows:
+            group.remove(row)
