@@ -467,7 +467,29 @@ class ConfigPageBuilder:
     def _on_restore_backup(self, btn):
         backup = btn._backup
         entry = btn._entry
+        confirm = Adw.AlertDialog()
+        confirm.set_heading("Restore Backup?")
+        confirm.set_body(
+            f"Restore {entry.display_name} from backup dated "
+            f"{backup.display_time}?\n\n"
+            f"The current file will be backed up before restoring."
+        )
+        confirm.add_response("cancel", "Cancel")
+        confirm.add_response("restore", "Restore")
+        confirm.set_response_appearance(
+            "restore", Adw.ResponseAppearance.DESTRUCTIVE
+        )
+        confirm.set_default_response("cancel")
+        confirm.set_close_response("cancel")
+        confirm.connect("response", self._on_restore_confirmed, backup, entry)
+        confirm.present(self._window)
+
+    def _on_restore_confirmed(self, dialog, response, backup, entry):
+        if response != "restore":
+            return
         restore_backup(backup)
+        config_path = entry.get_config_path() or entry.path
+        self._update_monitor(config_path)
         toast = Adw.Toast.new(f"Restored backup for {entry.display_name}")
         if hasattr(self._window, "_toast_overlay"):
             self._window._toast_overlay.add_toast(toast)
@@ -598,6 +620,10 @@ class ConfigPageBuilder:
             row.add_suffix(path_box)
             return row
 
+        # COMMENT (section header) — render as non-editable label, not a text field
+        if ftype == FieldType.COMMENT:
+            return None
+
         # KEYBIND
         if ftype == FieldType.KEYBIND:
             row = Adw.ActionRow(title=key, subtitle=description)
@@ -636,6 +662,12 @@ class ConfigPageBuilder:
     # Field change handlers
     # ------------------------------------------------------------------
 
+    def _update_monitor(self, config_path: str) -> None:
+        """Tell the file monitor we made the change ourselves."""
+        monitor = getattr(self._window, "_monitor", None)
+        if monitor is not None:
+            monitor.update_state(str(config_path))
+
     def _on_toggle_changed(self, row, _pspec):
         field = row._field
         entry = row._entry
@@ -649,6 +681,7 @@ class ConfigPageBuilder:
         def _save():
             create_backup(str(config_path), "edit")
             update_config_value(config_path, field, new_val)
+            self._update_monitor(config_path)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -659,7 +692,8 @@ class ConfigPageBuilder:
         entry = scale._entry
         parsed = scale._parsed
         config_path = entry.get_config_path() or entry.path
-        new_val = str(scale.get_value())
+        raw = scale.get_value()
+        new_val = str(int(raw)) if raw == int(raw) else str(raw)
         key = f"scale-{id(scale)}"
         if key in self._debounce_sources:
             GLib.source_remove(self._debounce_sources[key])
@@ -667,6 +701,7 @@ class ConfigPageBuilder:
         def _save():
             create_backup(str(config_path), "edit")
             update_config_value(config_path, field, new_val)
+            self._update_monitor(config_path)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -688,6 +723,7 @@ class ConfigPageBuilder:
         def _save():
             create_backup(str(config_path), "edit")
             update_config_value(config_path, field, hex_color)
+            self._update_monitor(config_path)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -698,7 +734,8 @@ class ConfigPageBuilder:
         entry = spin._entry
         parsed = spin._parsed
         config_path = entry.get_config_path() or entry.path
-        new_val = str(spin.get_value())
+        raw = spin.get_value()
+        new_val = str(int(raw)) if raw == int(raw) else str(raw)
         key = f"spin-{id(spin)}"
         if key in self._debounce_sources:
             GLib.source_remove(self._debounce_sources[key])
@@ -706,6 +743,7 @@ class ConfigPageBuilder:
         def _save():
             create_backup(str(config_path), "edit")
             update_config_value(config_path, field, new_val)
+            self._update_monitor(config_path)
             self._debounce_sources.pop(key, None)
             return False
 
@@ -724,6 +762,7 @@ class ConfigPageBuilder:
         def _save():
             create_backup(str(config_path), "edit")
             update_config_value(config_path, field, new_val)
+            self._update_monitor(config_path)
             self._debounce_sources.pop(key, None)
             return False
 
