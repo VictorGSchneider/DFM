@@ -205,19 +205,15 @@ def _plan_import(source_dir: str, manifest: dict | None,
 
 def _execute_import(actions: list[dict]) -> None:
     """Execute planned import actions."""
+    from dfm.core.backup import create_backup
+
     for action in actions:
         source = action["source"]
         target = action["target"]
 
-        # Backup existing file
-        if action["exists"]:
-            backup = target + ".dfm_backup"
-            if os.path.isdir(target):
-                if os.path.exists(backup):
-                    shutil.rmtree(backup)
-                shutil.copytree(target, backup)
-            else:
-                shutil.copy2(target, backup)
+        # Backup existing file using the unified backup system
+        if action["exists"] and os.path.isfile(target):
+            create_backup(target, reason="import")
 
         # Copy new file
         try:
