@@ -169,14 +169,14 @@ class TextViewerDialog(Adw.Dialog):
         tag_table = buf.get_tag_table()
 
         tags = {
-            "comment": {"foreground": "#8b949e"},
-            "section": {"foreground": "#d2a8ff", "weight": Pango.Weight.BOLD},
-            "key": {"foreground": "#79c0ff"},
-            "string": {"foreground": "#a5d6ff"},
-            "number": {"foreground": "#f0883e"},
-            "bool": {"foreground": "#ff7b72", "weight": Pango.Weight.BOLD},
-            "color_hex": {"foreground": "#7ee787"},
-            "operator": {"foreground": "#8b949e"},
+            "comment": {"foreground": "#7a7267"},      # stoa_fg_dark
+            "section": {"foreground": "#c49a5c", "weight": Pango.Weight.BOLD},  # bronze
+            "key": {"foreground": "#5a7a8a"},           # azure
+            "string": {"foreground": "#8a9a6c"},        # olive
+            "number": {"foreground": "#a89272"},         # tan
+            "bool": {"foreground": "#c49a5c", "weight": Pango.Weight.BOLD},  # bronze
+            "color_hex": {"foreground": "#8a9a6c"},     # olive
+            "operator": {"foreground": "#9e9a92"},      # marble
         }
 
         for name, props in tags.items():

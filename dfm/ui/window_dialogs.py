@@ -710,24 +710,24 @@ class DiffViewerDialog:
         tag_table = buf.get_tag_table()
 
         add_tag = Gtk.TextTag(name="addition")
-        add_tag.set_property("foreground", "#a6e3a1")
+        add_tag.set_property("foreground", "#8a9a6c")   # stoa olive
         tag_table.add(add_tag)
 
         del_tag = Gtk.TextTag(name="deletion")
-        del_tag.set_property("foreground", "#f38ba8")
+        del_tag.set_property("foreground", "#b36b5a")   # stoa terracotta
         tag_table.add(del_tag)
 
         ctx_tag = Gtk.TextTag(name="context")
-        ctx_tag.set_property("foreground", "#8b949e")
+        ctx_tag.set_property("foreground", "#7a7267")   # stoa fg_dark
         tag_table.add(ctx_tag)
 
         hdr_tag = Gtk.TextTag(name="header")
-        hdr_tag.set_property("foreground", "#89b4fa")
+        hdr_tag.set_property("foreground", "#5a7a8a")   # stoa azure
         hdr_tag.set_property("weight", Pango.Weight.BOLD)
         tag_table.add(hdr_tag)
 
         hunk_tag = Gtk.TextTag(name="hunk")
-        hunk_tag.set_property("foreground", "#d2a8ff")
+        hunk_tag.set_property("foreground", "#c49a5c")  # stoa bronze
         tag_table.add(hunk_tag)
 
         # Insert diff text with highlighting

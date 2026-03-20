@@ -99,8 +99,9 @@ def _sort_entries(
 
 
 class SidebarManager:
-    def __init__(self, on_entry_selected):
+    def __init__(self, on_entry_selected, on_analyzer_selected=None):
         self.on_entry_selected = on_entry_selected
+        self.on_analyzer_selected = on_analyzer_selected
         self.dotfiles: list[DotfileEntry] = []
         self.sort_mode: SortMode = SortMode.NAME_ASC
         self.filter_text: str = ""
@@ -279,6 +280,34 @@ class SidebarManager:
 
     def _on_all_dotfiles_clicked(self, _button: Gtk.Button) -> None:
         self.on_entry_selected(None)
+
+    def _make_analyzer_row(self) -> Gtk.Button:
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.set_margin_start(12)
+        box.set_margin_end(8)
+        box.set_margin_top(4)
+        box.set_margin_bottom(4)
+
+        icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+        icon.set_pixel_size(16)
+        box.append(icon)
+
+        label = Gtk.Label(label="Analyzer & Debugger")
+        label.set_halign(Gtk.Align.START)
+        label.set_hexpand(True)
+        label.set_ellipsize(Pango.EllipsizeMode.END)
+        box.append(label)
+
+        button = Gtk.Button()
+        button.set_child(box)
+        button.add_css_class("flat")
+        button.set_hexpand(True)
+        button.connect("clicked", self._on_analyzer_clicked)
+        return button
+
+    def _on_analyzer_clicked(self, _button: Gtk.Button) -> None:
+        if self.on_analyzer_selected:
+            self.on_analyzer_selected()
 
     def _make_category_header(
         self, category: str, icon_name: str, count: int
