@@ -8,6 +8,8 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "PyGObject>=3.42.0",
+        "PyYAML>=6.0",
+        'tomli>=1.2; python_version < "3.11"',
     ],
     entry_points={
         "console_scripts": [
