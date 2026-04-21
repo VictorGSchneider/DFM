@@ -167,13 +167,28 @@ gh auth login
 ## Usage
 
 ```bash
-# Run directly
+# Run directly from a clone
 python -m dfm.main
 
-# Or install and run
+# Install with pipx (recommended on Arch / PEP 668 systems)
+pipx install --editable .
+dfm
+
+# Or install into a venv / --user site
 pip install -e .
 dfm
 ```
+
+An XDG desktop entry is shipped at `data/dfm.desktop` — symlink or copy it
+into `~/.local/share/applications/` to get a launcher icon in rofi drun,
+GNOME Activities, or any app grid.
+
+### StoaLinux
+
+[StoaLinux](https://github.com/VictorGSchneider/StoaLinux) ships DFM
+pre-wired: `install.sh` installs the in-tree fork at `scripts/stoa-dfm/`
+as an editable pipx (or venv) package, links the desktop entry, and binds
+`Super+G` to launch it. No extra setup needed.
 
 ## Project Structure
 
