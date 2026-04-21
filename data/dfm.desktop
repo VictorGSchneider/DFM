@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=DFM
+GenericName=Dotfile Manager
+Comment=Edit dotfiles in place with smart widgets, backups, and GitHub sync
+Exec=dfm
+Icon=preferences-desktop
+Terminal=false
+Categories=Utility;Settings;GTK;
+StartupNotify=true
+StartupWMClass=com.github.dfm
+Keywords=dotfile;dotfiles;config;configuration;settings;editor;backup;
