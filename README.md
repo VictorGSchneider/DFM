@@ -49,11 +49,39 @@ Automatically scans your system for known dotfiles and config directories (`~/.c
 - Keybind display for keyboard shortcuts
 - Section headers parsed from comments
 
+Formats handled: INI, TOML, YAML, JSON, Lua, shell, X Resources, i3/Hyprland
+`.conf`, plus a generic `key = value` fallback.
+
+### Lua Configs
+
+Apps that configure themselves in Lua — Hyprland (`hyprland.lua`), Neovim
+(`init.lua`), WezTerm (`wezterm.lua`), AwesomeWM (`rc.lua`), xplr — are parsed
+as first-class configs instead of falling back to generic text:
+
+- Nested tables become sections, so `decoration.blur.enabled` shows up as a
+  toggle under its own group
+- Booleans, numbers, strings, colors and paths get the same smart widgets as
+  every other format
+- List entries (`exec-once = { "waybar" }`, Hyprland `bind` tables) are
+  editable item by item
+- Writes preserve the original formatting: quoting style, trailing commas,
+  inline `--` comments and indentation stay exactly as they were
+- Function bodies, `require()` calls and other executable code are left alone
+  rather than being offered as editable values
+- Syntax checking uses `luac` when the `lua` package is installed, and falls
+  back to structural checks (unbalanced braces, `end` mismatch, unterminated
+  strings) when it isn't
+- `require("config.foo")` pointing at a module that does not exist in your
+  config tree is reported by the Analyzer
+
+When a directory holds both the legacy and the Lua config (e.g. `hyprland.conf`
+and `hyprland.lua`), DFM opens the Lua one.
+
 ### Raw Text Viewer
 
 Built-in viewer for inspecting dotfiles without leaving the app:
 
-- Syntax highlighting (comments, keys, values, colors, booleans)
+- Syntax highlighting (comments, keys, values, colors, booleans; Lua keywords and `--` comments in Lua files)
 - Copy to clipboard
 - Line wrap toggle
 - Reload button
@@ -76,7 +104,7 @@ Built-in viewer for inspecting dotfiles without leaving the app:
 A dedicated diagnostics page that scans all your dotfiles at once and reports issues grouped by severity (errors, warnings, info). Accessible from the sidebar or the Tools menu.
 
 **Per-file checks:**
-- Syntax validation for known formats (JSON, TOML, YAML, INI, shell, Xresources)
+- Syntax validation for known formats (JSON, TOML, YAML, INI, Lua, shell, Xresources)
 - Broken symlinks and missing referenced files (`source ~/.zsh_custom` pointing to nothing)
 - Duplicate keys that silently shadow earlier values
 - Empty values that may be unintentional
@@ -132,16 +160,16 @@ Export your dotfiles as a `.tar.gz` archive with a manifest and import them on a
 | Category | Examples |
 |---|---|
 | Shells | `.bashrc`, `.zshrc`, `.profile`, Fish |
-| Window Managers | i3, Sway, Hyprland, BSPWM, Awesome, Openbox, Herbstluftwm |
-| Terminals | Alacritty, Kitty, Foot, WezTerm |
+| Window Managers | i3, Sway, Hyprland (`.conf` or `.lua`), BSPWM, Awesome (`rc.lua`), Openbox, Herbstluftwm |
+| Terminals | Alacritty, Kitty, Foot, WezTerm (`wezterm.lua`) |
 | Status Bars | Waybar, Polybar |
 | Launchers | Rofi, Wofi |
 | Notifications | Dunst, Mako |
-| Editors | Vim, Neovim, Nano |
+| Editors | Vim, Neovim (`init.lua`), Nano |
 | Media | MPV, CAVA, PipeWire, PulseAudio |
 | Appearance | GTK 3/4, Qt5/6, Fontconfig |
 | Development | Git |
-| System | Starship, Ranger, LF, Btop, Htop, Neofetch, Fastfetch, and more |
+| System | Starship, Ranger, LF, xplr, Btop, Htop, Neofetch, Fastfetch, and more |
 
 80+ known config files and directories are detected automatically.
 
@@ -152,6 +180,7 @@ Export your dotfiles as a `.tar.gz` archive with a manifest and import them on a
 - libadwaita
 - PyGObject
 - GitHub CLI (`gh`) — optional, required for GitHub sync features
+- `lua` — optional, enables full syntax checking of Lua configs via `luac`
 
 ### Install on Arch Linux
 
@@ -162,6 +191,9 @@ sudo pacman -S python python-gobject gtk4 libadwaita
 # Optional (for GitHub sync)
 sudo pacman -S github-cli
 gh auth login
+
+# Optional (syntax checking of Lua configs)
+sudo pacman -S lua
 ```
 
 ## Usage

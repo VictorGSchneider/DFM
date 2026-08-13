@@ -3,84 +3,18 @@
 import os
 import re
 import stat
-from dataclasses import dataclass, field
-from enum import Enum, auto
 from pathlib import Path
 
 from dfm.core.scanner import DotfileEntry
-from dfm.core.validator import validate_file, ValidationResult
-from dfm.core.conflicts import detect_conflicts, Conflict
-from dfm.core.dependencies import get_dependencies, Dependency
-
-
-class IssueSeverity(Enum):
-    ERROR = auto()
-    WARNING = auto()
-    INFO = auto()
-
-
-@dataclass
-class Issue:
-    """A single issue found during analysis."""
-    severity: IssueSeverity
-    title: str
-    detail: str
-    file_path: str = ""
-    line_number: int = 0
-    category: str = "general"
-    fix_hint: str = ""
-
-
-@dataclass
-class FileAnalysis:
-    """Analysis results for a single dotfile."""
-    entry: DotfileEntry
-    issues: list[Issue] = field(default_factory=list)
-    validation: ValidationResult | None = None
-    deps: list[Dependency] = field(default_factory=list)
-
-    @property
-    def error_count(self) -> int:
-        return sum(1 for i in self.issues if i.severity == IssueSeverity.ERROR)
-
-    @property
-    def warning_count(self) -> int:
-        return sum(1 for i in self.issues if i.severity == IssueSeverity.WARNING)
-
-    @property
-    def info_count(self) -> int:
-        return sum(1 for i in self.issues if i.severity == IssueSeverity.INFO)
-
-    @property
-    def has_problems(self) -> bool:
-        return self.error_count > 0 or self.warning_count > 0
-
-
-@dataclass
-class FullAnalysis:
-    """Complete analysis of all dotfiles."""
-    file_analyses: list[FileAnalysis] = field(default_factory=list)
-    conflicts: list[Conflict] = field(default_factory=list)
-
-    @property
-    def total_errors(self) -> int:
-        return sum(a.error_count for a in self.file_analyses)
-
-    @property
-    def total_warnings(self) -> int:
-        return sum(a.warning_count for a in self.file_analyses)
-
-    @property
-    def total_info(self) -> int:
-        return sum(a.info_count for a in self.file_analyses)
-
-    @property
-    def healthy_count(self) -> int:
-        return sum(1 for a in self.file_analyses if not a.has_problems)
-
-    @property
-    def problematic_count(self) -> int:
-        return sum(1 for a in self.file_analyses if a.has_problems)
+from dfm.core.analyzer_types import (
+    IssueSeverity, Issue, FileAnalysis, FullAnalysis,
+)
+from dfm.core.analyzer_lua import (
+    is_lua, check_lua_requires, check_lua_duplicate_keys,
+)
+from dfm.core.validator import validate_file
+from dfm.core.conflicts import detect_conflicts
+from dfm.core.dependencies import get_dependencies
 
 
 def analyze_all(entries: list[DotfileEntry]) -> FullAnalysis:
@@ -208,6 +142,10 @@ def _check_broken_references(fa: FileAnalysis, lines: list[str],
     """Check for source/include references to files that don't exist."""
     home = str(Path.home())
 
+    if is_lua(file_path):
+        check_lua_requires(fa, lines, file_path)
+        return
+
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
         if stripped.startswith("#") or stripped.startswith("!"):
@@ -253,6 +191,10 @@ def _check_broken_references(fa: FileAnalysis, lines: list[str],
 def _check_duplicate_keys(fa: FileAnalysis, lines: list[str],
                            file_path: str) -> None:
     """Detect duplicate key definitions (potential shadowing)."""
+    if is_lua(file_path):
+        check_lua_duplicate_keys(fa, lines, file_path)
+        return
+
     seen_keys: dict[str, list[int]] = {}
 
     for i, line in enumerate(lines, 1):
@@ -283,6 +225,9 @@ def _check_duplicate_keys(fa: FileAnalysis, lines: list[str],
 def _check_empty_values(fa: FileAnalysis, lines: list[str],
                          file_path: str) -> None:
     """Detect keys with empty values that might be unintentional."""
+    if is_lua(file_path):
+        return  # an empty Lua assignment is a syntax error, not a style hint
+
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
         if not stripped or stripped.startswith(("#", ";", "//", "!", "[")):
@@ -319,9 +264,10 @@ def _check_deprecated_patterns(fa: FileAnalysis, lines: list[str],
              "PATH appended multiple times — may grow on each shell"),
         ])
 
+    comment_prefix = "--" if is_lua(file_path) else "#"
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
-        if stripped.startswith("#"):
+        if stripped.startswith(comment_prefix):
             continue
         for pattern, message in deprecated:
             if re.search(pattern, stripped):

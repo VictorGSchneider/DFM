@@ -91,7 +91,44 @@ color15 #a6adc8
 """
 
 
+_WEZTERM_CONTENT = """\
+-- WezTerm config - template by DFM
+
+local wezterm = require("wezterm")
+local config = wezterm.config_builder()
+
+config.color_scheme = "Catppuccin Mocha"
+config.font = wezterm.font("JetBrainsMono Nerd Font")
+config.font_size = 12.0
+config.line_height = 1.1
+
+config.window_background_opacity = 0.95
+config.hide_tab_bar_if_only_one_tab = true
+config.use_fancy_tab_bar = false
+config.scrollback_lines = 10000
+config.enable_scroll_bar = false
+config.audible_bell = "Disabled"
+
+config.window_padding = {
+    left = 8,
+    right = 8,
+    top = 8,
+    bottom = 8,
+}
+
+return config
+"""
+
+
 TERMINALS: list[Template] = [
+    Template(
+        name="wezterm-default",
+        app_name="WezTerm",
+        description="WezTerm config in Lua with a dark theme and sensible padding",
+        category="Terminal Emulators",
+        config_path="~/.config/wezterm/wezterm.lua",
+        content=_WEZTERM_CONTENT,
+    ),
     Template(
         name="alacritty-default",
         app_name="Alacritty",

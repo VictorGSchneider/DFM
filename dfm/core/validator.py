@@ -3,6 +3,9 @@
 import json
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 
 
@@ -42,6 +45,8 @@ def validate_file(file_path: str) -> ValidationResult:
         return _validate_toml(content)
     if ext in (".yaml", ".yml"):
         return _validate_yaml(content)
+    if ext == ".lua":
+        return _validate_lua(content)
     if ext in (".ini", ".cfg", ".conf"):
         return _validate_ini(content)
     if basename in (".bashrc", ".zshrc", ".bash_profile", ".zprofile",
@@ -144,6 +149,101 @@ def _validate_yaml(content: str) -> ValidationResult:
         errors.append(f"YAML error: {e}")
 
     return ValidationResult(len(errors) == 0, errors, warnings)
+
+
+_LUA_COMPILERS = ("luac", "luac5.4", "luac5.3", "luac5.2", "luac5.1", "luajit")
+
+
+def _validate_lua(content: str) -> ValidationResult:
+    """Validate Lua syntax, using the Lua compiler when it is installed."""
+    compiler = next((c for c in _LUA_COMPILERS if shutil.which(c)), None)
+    if compiler is None:
+        return _validate_lua_basic(content)
+
+    tmp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        if compiler == "luajit":
+            cmd = [compiler, "-b", tmp_path, os.devnull]
+        else:
+            cmd = [compiler, "-p", tmp_path]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+    except (subprocess.SubprocessError, OSError):
+        return _validate_lua_basic(content)
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    if result.returncode == 0:
+        return ValidationResult(True, [], [])
+
+    errors = []
+    for line in (result.stderr or result.stdout).splitlines():
+        message = line.strip()
+        if not message:
+            continue
+        # luac: /tmp/xxx.lua:12: '}' expected near 'foo'
+        message = re.sub(r"^[^\s:]*lua[^\s:]*:\s*", "", message)
+        message = message.replace(tmp_path + ":", "Line ")
+        errors.append(f"Lua syntax error: {message}")
+
+    if not errors:
+        errors.append("Lua syntax error (reported by the Lua compiler)")
+
+    return ValidationResult(False, errors, [])
+
+
+def _validate_lua_basic(content: str) -> ValidationResult:
+    """Structural Lua checks used when no Lua compiler is available."""
+    warnings = []
+    code = _strip_lua_noise(content)
+
+    for opener, closer, name in (("{", "}", "braces"), ("(", ")", "parentheses"),
+                                 ("[", "]", "brackets")):
+        if code.count(opener) != code.count(closer):
+            warnings.append(
+                f"Mismatched {name}: {code.count(opener)} '{opener}' "
+                f"vs {code.count(closer)} '{closer}'"
+            )
+
+    opens = len(re.findall(r"\b(?:function|if|do)\b", code))
+    ends = len(re.findall(r"\bend\b", code))
+    if opens != ends:
+        warnings.append(
+            f"Mismatched block keywords: {opens} function/if/do vs {ends} end"
+        )
+
+    for i, line in enumerate(content.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        if _has_unterminated_string(stripped):
+            warnings.append(f"Line {i}: Possibly unterminated string")
+        code = re.sub(r"--.*$", "", stripped).rstrip()
+        if re.search(r"=\s*[,;]$", code):
+            warnings.append(f"Line {i}: Assignment with no value")
+
+    return ValidationResult(True, [], warnings)
+
+
+def _strip_lua_noise(content: str) -> str:
+    """Remove comments and string literals so structure can be counted."""
+    code = re.sub(r"--\[(=*)\[.*?\]\1\]", "", content, flags=re.DOTALL)
+    code = re.sub(r"--.*$", "", code, flags=re.MULTILINE)
+    code = re.sub(r"\[(=*)\[.*?\]\1\]", '""', code, flags=re.DOTALL)
+    return re.sub(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'", '""', code)
+
+
+def _has_unterminated_string(line: str) -> bool:
+    """Detect an odd number of unescaped quotes outside of comments."""
+    code = re.sub(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'", "", line)
+    code = re.sub(r"--.*$", "", code)
+    return "\"" in code or "'" in code
 
 
 def _validate_ini(content: str) -> ValidationResult:

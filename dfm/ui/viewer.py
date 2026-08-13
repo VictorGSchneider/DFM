@@ -8,6 +8,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk, Pango
 
+from dfm.core.parser.detect import detect_format
+
 
 # Basic syntax patterns for config files
 COMMENT_PATTERNS = [
@@ -23,6 +25,16 @@ STRING_PATTERN = re.compile(r'(".*?"|\'.*?\')')
 NUMBER_PATTERN = re.compile(r"\b(\d+(?:\.\d+)?)\b")
 BOOL_PATTERN = re.compile(r"\b(true|false|yes|no|on|off)\b", re.IGNORECASE)
 COLOR_HEX_PATTERN = re.compile(r"(#[0-9a-fA-F]{3,8})\b")
+
+# Lua-specific patterns (`--` comments, keywords, `key = value` assignments)
+LUA_KEYWORD_PATTERN = re.compile(
+    r"\b(local|function|end|if|then|else|elseif|for|while|do|return|require"
+    r"|and|or|not|in|repeat|until|break|nil)\b"
+)
+LUA_ASSIGN_PATTERN = re.compile(
+    r"^[ \t]*(?:local\s+)?([A-Za-z_][\w.]*|\[[^\]\n]+\])(\s*=\s*)",
+    re.MULTILINE,
+)
 
 
 class TextViewerDialog(Adw.Dialog):
@@ -177,6 +189,7 @@ class TextViewerDialog(Adw.Dialog):
             "bool": {"foreground": "#c49a5c", "weight": Pango.Weight.BOLD},  # bronze
             "color_hex": {"foreground": "#8a9a6c"},     # olive
             "operator": {"foreground": "#9e9a92"},      # marble
+            "keyword": {"foreground": "#8a6a5c"},       # terracotta
         }
 
         for name, props in tags.items():
@@ -190,6 +203,10 @@ class TextViewerDialog(Adw.Dialog):
 
     def _apply_highlighting(self, buf: Gtk.TextBuffer, content: str) -> None:
         """Apply syntax highlighting tags to the buffer."""
+        if detect_format(self.file_path, content) == "lua":
+            self._apply_lua_highlighting(buf, content)
+            return
+
         # Comments
         for pattern in COMMENT_PATTERNS:
             for match in pattern.finditer(content):
@@ -231,6 +248,43 @@ class TextViewerDialog(Adw.Dialog):
             start = buf.get_iter_at_offset(match.start(1))
             end = buf.get_iter_at_offset(match.end(1))
             buf.apply_tag_by_name("string", start, end)
+
+    def _apply_lua_highlighting(self, buf: Gtk.TextBuffer, content: str) -> None:
+        """Highlight Lua sources: `--` comments, strings, keywords, keys."""
+        comments, strings = _lua_spans(content)
+
+        for start, end in comments:
+            buf.apply_tag_by_name("comment", buf.get_iter_at_offset(start),
+                                  buf.get_iter_at_offset(end))
+        for start, end in strings:
+            buf.apply_tag_by_name("string", buf.get_iter_at_offset(start),
+                                  buf.get_iter_at_offset(end))
+
+        for match in LUA_ASSIGN_PATTERN.finditer(content):
+            if _in_spans(match.start(1), comments + strings):
+                continue
+            buf.apply_tag_by_name("key", buf.get_iter_at_offset(match.start(1)),
+                                  buf.get_iter_at_offset(match.end(1)))
+            buf.apply_tag_by_name("operator",
+                                  buf.get_iter_at_offset(match.start(2)),
+                                  buf.get_iter_at_offset(match.end(2)))
+
+        for pattern, tag in ((LUA_KEYWORD_PATTERN, "keyword"),
+                             (NUMBER_PATTERN, "number"),
+                             (BOOL_PATTERN, "bool")):
+            for match in pattern.finditer(content):
+                if _in_spans(match.start(1), comments + strings):
+                    continue
+                buf.apply_tag_by_name(tag, buf.get_iter_at_offset(match.start(1)),
+                                      buf.get_iter_at_offset(match.end(1)))
+
+        # Colors are written inside strings ("#1e1e2e", "rgba(...)")
+        for match in COLOR_HEX_PATTERN.finditer(content):
+            if _in_spans(match.start(1), comments):
+                continue
+            buf.apply_tag_by_name("color_hex",
+                                  buf.get_iter_at_offset(match.start(1)),
+                                  buf.get_iter_at_offset(match.end(1)))
 
     def _highlight_value(self, buf: Gtk.TextBuffer, text: str,
                          offset: int) -> None:
@@ -280,6 +334,46 @@ class TextViewerDialog(Adw.Dialog):
             self.text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         else:
             self.text_view.set_wrap_mode(Gtk.WrapMode.NONE)
+
+
+def _lua_spans(content: str) -> tuple[list[tuple[int, int]],
+                                      list[tuple[int, int]]]:
+    """Return the (comment, string) character ranges of a Lua source."""
+    comments: list[tuple[int, int]] = []
+    strings: list[tuple[int, int]] = []
+    i, size = 0, len(content)
+
+    while i < size:
+        if content.startswith("--", i):
+            if content.startswith("--[[", i):
+                end = content.find("]]", i + 4)
+                end = size if end == -1 else end + 2
+            else:
+                end = content.find("\n", i)
+                end = size if end == -1 else end
+            comments.append((i, end))
+            i = end
+        elif content[i] in "\"'":
+            quote = content[i]
+            j = i + 1
+            while j < size and content[j] not in (quote, "\n"):
+                j += 2 if content[j] == "\\" else 1
+            strings.append((i, min(j + 1, size)))
+            i = min(j + 1, size)
+        elif content.startswith("[[", i):
+            end = content.find("]]", i + 2)
+            end = size if end == -1 else end + 2
+            strings.append((i, end))
+            i = end
+        else:
+            i += 1
+
+    return comments, strings
+
+
+def _in_spans(position: int, spans: list[tuple[int, int]]) -> bool:
+    """True when a character offset falls inside one of the ranges."""
+    return any(start <= position < end for start, end in spans)
 
 
 def _format_size(size_bytes: int) -> str:

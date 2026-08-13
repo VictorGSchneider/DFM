@@ -17,6 +17,8 @@ def detect_format(filepath: str, content: str) -> str:
         return "yaml"
     if ext in (".ini", ".cfg"):
         return "ini"
+    if ext == ".lua":
+        return "lua"
 
     if basename in (".xresources", ".xdefaults"):
         return "xresources"
@@ -27,6 +29,12 @@ def detect_format(filepath: str, content: str) -> str:
         return "i3"
 
     content_start = content[:500]
+    # `local x = …` needs the space before `=` to tell Lua from shell locals
+    if not content.startswith("#!") and re.search(
+        r"^\s*(local\s+[\w.]+\s+=|return\s*\{|require\s*[({\"']|vim\.(opt|g|cmd)\b)",
+        content_start, re.MULTILINE,
+    ):
+        return "lua"
     if content_start.lstrip().startswith("{"):
         return "json"
     if re.search(r"^\[[\w\s.:-]+\]", content_start, re.MULTILINE):
