@@ -11,9 +11,11 @@ from dfm.core.parser.handlers_structured import (
     parse_json,
 )
 from dfm.core.parser.handlers_shell import parse_shell, parse_i3_like
+from dfm.core.parser.handlers_lua import parse_lua
 
 __all__ = [
     "parse_ini",
+    "parse_lua",
     "parse_toml",
     "parse_yaml",
     "parse_shell",

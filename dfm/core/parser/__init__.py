@@ -17,6 +17,7 @@ from dfm.core.parser.handlers import (
     parse_xresources,
     parse_i3_like,
     parse_json,
+    parse_lua,
     parse_generic,
 )
 from dfm.core.parser.writer import update_config_value
@@ -40,6 +41,7 @@ def parse_config(filepath: str) -> ParsedConfig:
         "xresources": parse_xresources,
         "i3": parse_i3_like,
         "shell": parse_shell,
+        "lua": parse_lua,
     }
     fields = handlers.get(file_format, parse_generic)(content)
 

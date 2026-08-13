@@ -167,6 +167,101 @@ exec-once = dunst
 """
 
 
+_HYPRLAND_LUA_CONTENT = """\
+-- Hyprland config (Lua) - minimal template by DFM
+-- Mirrors the classic hyprland.conf layout as a Lua table.
+
+local mainMod = "SUPER"
+
+return {
+    monitor = ",preferred,auto,1",
+
+    general = {
+        gaps_in = 5,
+        gaps_out = 10,
+        border_size = 2,
+        ["col.active_border"] = "rgba(33ccffee) rgba(00ff99ee) 45deg",
+        ["col.inactive_border"] = "rgba(595959aa)",
+        layout = "dwindle",
+    },
+
+    decoration = {
+        rounding = 10,
+        blur = {
+            enabled = true,
+            size = 3,
+            passes = 1,
+        },
+        shadow = {
+            enabled = true,
+            range = 4,
+            render_power = 3,
+        },
+    },
+
+    animations = {
+        enabled = true,
+        bezier = { "myBezier, 0.05, 0.9, 0.1, 1.05" },
+        animation = {
+            "windows, 1, 7, myBezier",
+            "windowsOut, 1, 7, default, popin 80%",
+            "border, 1, 10, default",
+            "fade, 1, 7, default",
+            "workspaces, 1, 6, default",
+        },
+    },
+
+    input = {
+        kb_layout = "us",
+        follow_mouse = 1,
+        sensitivity = 0,
+    },
+
+    dwindle = {
+        pseudotile = true,
+        preserve_split = true,
+    },
+
+    bind = {
+        { mainMod, "Return", "exec", "alacritty" },
+        { mainMod, "Q", "killactive" },
+        { mainMod, "M", "exit" },
+        { mainMod, "E", "exec", "thunar" },
+        { mainMod, "V", "togglefloating" },
+        { mainMod, "D", "exec", "rofi -show drun" },
+        { mainMod, "F", "fullscreen" },
+
+        { mainMod, "H", "movefocus", "l" },
+        { mainMod, "L", "movefocus", "r" },
+        { mainMod, "K", "movefocus", "u" },
+        { mainMod, "J", "movefocus", "d" },
+
+        { mainMod, "1", "workspace", "1" },
+        { mainMod, "2", "workspace", "2" },
+        { mainMod, "3", "workspace", "3" },
+        { mainMod, "4", "workspace", "4" },
+        { mainMod, "5", "workspace", "5" },
+
+        { mainMod .. " SHIFT", "1", "movetoworkspace", "1" },
+        { mainMod .. " SHIFT", "2", "movetoworkspace", "2" },
+        { mainMod .. " SHIFT", "3", "movetoworkspace", "3" },
+        { mainMod .. " SHIFT", "4", "movetoworkspace", "4" },
+        { mainMod .. " SHIFT", "5", "movetoworkspace", "5" },
+    },
+
+    bindm = {
+        { mainMod, "mouse:272", "movewindow" },
+        { mainMod, "mouse:273", "resizewindow" },
+    },
+
+    ["exec-once"] = {
+        "waybar",
+        "dunst",
+    },
+}
+"""
+
+
 WINDOW_MANAGERS: list[Template] = [
     Template(
         name="i3-minimal",
@@ -183,5 +278,13 @@ WINDOW_MANAGERS: list[Template] = [
         category="Window Managers",
         config_path="~/.config/hypr/hyprland.conf",
         content=_HYPRLAND_CONTENT,
+    ),
+    Template(
+        name="hyprland-lua",
+        app_name="Hyprland (Lua)",
+        description="Same Hyprland setup written as a Lua table for the Lua config format",
+        category="Window Managers",
+        config_path="~/.config/hypr/hyprland.lua",
+        content=_HYPRLAND_LUA_CONTENT,
     ),
 ]

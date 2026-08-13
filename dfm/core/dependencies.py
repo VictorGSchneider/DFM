@@ -99,6 +99,13 @@ _DEPENDENCY_MAP: dict[str, list[tuple[str, str, bool]]] = {
     "vim": [
         ("vim", "Vim text editor", False),
     ],
+    "awesome": [
+        ("awesome", "Awesome window manager", False),
+        ("lua", "Lua interpreter", True),
+    ],
+    "xplr": [
+        ("xplr", "xplr file manager", False),
+    ],
     "fish": [
         ("fish", "Fish shell", False),
     ],
@@ -163,6 +170,15 @@ def get_dependencies(entry) -> list[Dependency]:
                         installed=_is_installed(pkg),
                         optional=optional,
                     ))
+
+    config_path = entry.get_config_path() or entry.path
+    if os.path.splitext(str(config_path))[1].lower() == ".lua" and "lua" not in seen:
+        deps.append(Dependency(
+            package="lua",
+            description="Lua interpreter (luac validates Lua configs)",
+            installed=_is_installed("lua") or shutil.which("luac") is not None,
+            optional=True,
+        ))
 
     return deps
 

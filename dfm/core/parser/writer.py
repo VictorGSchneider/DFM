@@ -2,7 +2,12 @@
 
 import re
 
-from dfm.core.parser.types import ConfigField, BOOL_TRUE
+from dfm.core.parser.types import ConfigField, BOOL_TRUE, BOOL_FALSE
+from dfm.core.parser.detect import detect_format
+from dfm.core.parser.handlers_lua import ASSIGNMENT as LUA_ASSIGNMENT
+from dfm.core.parser.handlers_lua import LONG_STRING, is_literal, split_lua_comment
+
+_NUMERIC = re.compile(r"^-?\d+(\.\d+)?$")
 
 
 def update_config_value(filepath: str, field: ConfigField, new_value: str) -> bool:
@@ -19,7 +24,10 @@ def update_config_value(filepath: str, field: ConfigField, new_value: str) -> bo
     idx = field.line_number - 1
     old_line = lines[idx]
 
-    new_line = _rebuild_line(old_line, field, new_value)
+    if detect_format(filepath, "".join(lines)) == "lua":
+        new_line = _rebuild_lua_line(old_line, new_value)
+    else:
+        new_line = _rebuild_line(old_line, field, new_value)
     if new_line is None:
         return False
 
@@ -66,3 +74,53 @@ def _rebuild_line(old_line: str, field: ConfigField, new_value: str) -> str | No
         return f"{indent}{match.group(1)}{new_value}\n"
 
     return None
+
+
+def _rebuild_lua_line(old_line: str, new_value: str) -> str | None:
+    """Rebuild a Lua assignment, keeping quoting, commas and comments intact."""
+    body = old_line.rstrip("\n")
+    indent = body[:len(body) - len(body.lstrip())]
+
+    code, comment = split_lua_comment(body.strip())
+    gap = code[len(code.rstrip()):]
+    code = code.rstrip()
+
+    separator = ""
+    while code.endswith((",", ";")):
+        separator = code[-1] + separator
+        code = code[:-1].rstrip()
+
+    match = LUA_ASSIGNMENT.match(code)
+    if match is None:
+        # A keyless table item, e.g. `"waybar",` inside `exec-once = {`
+        if not is_literal(code):
+            return None
+        return f"{indent}{_format_lua_value(code, new_value)}{separator}{gap}{comment}\n"
+
+    prefix = code[:match.start("value")]
+    value = _format_lua_value(match.group("value").strip(), new_value)
+
+    return f"{indent}{prefix}{value}{separator}{gap}{comment}\n"
+
+
+def _format_lua_value(old_value: str, new_value: str) -> str:
+    """Render a new value the way the old one was written."""
+    if len(old_value) >= 2 and old_value[0] == old_value[-1] and old_value[0] in "\"'":
+        quote = old_value[0]
+        escaped = new_value.replace("\\", "\\\\").replace(quote, f"\\{quote}")
+        return f"{quote}{escaped}{quote}"
+
+    match = LONG_STRING.match(old_value)
+    if match:
+        equals = match.group(1)
+        return f"[{equals}[{new_value}]{equals}]"
+
+    stripped = new_value.strip()
+    lowered = stripped.lower()
+    if lowered in ("nil",) or _NUMERIC.match(stripped):
+        return stripped
+    if lowered in BOOL_TRUE or lowered in BOOL_FALSE:
+        return "true" if lowered in BOOL_TRUE else "false"
+
+    # The old value was a bare expression (identifier, table, …) — keep it bare.
+    return stripped

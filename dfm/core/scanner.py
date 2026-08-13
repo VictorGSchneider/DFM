@@ -87,6 +87,7 @@ KNOWN_CONFIG_DIRS = {
     "pulse": "PulseAudio",
     "pipewire": "PipeWire",
     "wireplumber": "WirePlumber",
+    "xplr": "xplr File Manager",
     "systemd": "Systemd (User)",
     "environment.d": "Environment Variables",
     "mimeapps.list": "MIME Apps",
@@ -102,6 +103,9 @@ CONFIG_FILE_PATTERNS = [
     "config.yml",
     "config.json",
     "config.conf",
+    "config.lua",
+    "init.lua",
+    "rc.lua",
     "settings.ini",
     "settings.conf",
     "rc.conf",
@@ -110,7 +114,20 @@ CONFIG_FILE_PATTERNS = [
     "*.toml",
     "*.yaml",
     "*.yml",
+    "*.lua",
 ]
+
+# Main config file per directory, most specific first. Apps that moved to Lua
+# usually keep the legacy file around, so the Lua entry point wins.
+DIR_MAIN_FILES = {
+    "hypr": ["hyprland.lua", "hyprland.conf"],
+    "hyprland": ["hyprland.lua", "hyprland.conf"],
+    "nvim": ["init.lua", "init.vim"],
+    "neovim": ["init.lua", "init.vim"],
+    "awesome": ["rc.lua"],
+    "wezterm": ["wezterm.lua"],
+    "xplr": ["init.lua"],
+}
 
 
 @dataclass
@@ -156,7 +173,7 @@ def scan_dotfiles(home_dir: str | None = None) -> list[DotfileEntry]:
         for dirname, display_name in KNOWN_CONFIG_DIRS.items():
             dirpath = os.path.join(config_dir, dirname)
             if os.path.exists(dirpath):
-                config_file = _find_config_file(dirpath)
+                config_file = _find_config_file(dirpath, dirname)
                 if os.path.isdir(dirpath) and config_file:
                     entries.append(DotfileEntry(
                         name=dirname,
@@ -180,12 +197,19 @@ def scan_dotfiles(home_dir: str | None = None) -> list[DotfileEntry]:
     return entries
 
 
-def _find_config_file(dirpath: str) -> str:
+def _find_config_file(dirpath: str, dirname: str = "") -> str:
     """Find the main config file in a directory."""
+    # The app's own entry point wins over any generic name
+    for name in DIR_MAIN_FILES.get(dirname, []):
+        filepath = os.path.join(dirpath, name)
+        if os.path.isfile(filepath):
+            return filepath
+
     # Check exact names first
     exact_names = ["config", "config.conf", "config.ini", "config.toml",
-                   "config.yaml", "config.yml", "config.json",
-                   "settings.ini", "settings.conf", "rc.conf"]
+                   "config.yaml", "config.yml", "config.json", "config.lua",
+                   "init.lua", "rc.lua", "settings.ini", "settings.conf",
+                   "rc.conf"]
     for name in exact_names:
         filepath = os.path.join(dirpath, name)
         if os.path.isfile(filepath):
@@ -193,11 +217,12 @@ def _find_config_file(dirpath: str) -> str:
 
     # Check for any config-like file
     try:
-        for f in os.listdir(dirpath):
+        for f in sorted(os.listdir(dirpath)):
             fpath = os.path.join(dirpath, f)
             if os.path.isfile(fpath):
                 ext = os.path.splitext(f)[1].lower()
-                if ext in (".conf", ".ini", ".toml", ".yaml", ".yml", ".json", ".cfg"):
+                if ext in (".conf", ".ini", ".toml", ".yaml", ".yml", ".json",
+                           ".cfg", ".lua"):
                     return fpath
     except PermissionError:
         pass

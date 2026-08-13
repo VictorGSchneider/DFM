@@ -119,6 +119,15 @@ WIZARD_APPS: list[WizardApp] = [
         template_key="neovim-minimal",
     ),
     WizardApp(
+        name="wezterm",
+        display_name="WezTerm",
+        command="wezterm",
+        config_path="~/.config/wezterm/wezterm.lua",
+        description="GPU-accelerated terminal configured in Lua",
+        category="Terminal Emulators",
+        template_key="wezterm-default",
+    ),
+    WizardApp(
         name="fish",
         display_name="Fish",
         command="fish",
