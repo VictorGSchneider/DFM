@@ -8,6 +8,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
+from dfm.core.distro import install_hint
 from dfm.core.scanner import DotfileEntry
 from dfm.core.exporter import export_dotfiles, import_dotfiles
 from dfm.core.github_sync import (
@@ -112,7 +113,7 @@ class GistSharer:
         if not is_gh_available():
             self.window._show_message(
                 "GitHub CLI Not Found",
-                "Install gh CLI: sudo pacman -S github-cli",
+                f"Install gh CLI: {install_hint('github-cli')}",
             )
             return
         if not is_gh_authenticated():

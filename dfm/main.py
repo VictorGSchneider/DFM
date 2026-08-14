@@ -1,4 +1,4 @@
-"""DFM - Dotfile Manager for Arch Linux.
+"""DFM - Dotfile Manager for Linux.
 
 A GTK4/Adwaita GUI application for managing dotfiles.
 """

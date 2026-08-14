@@ -9,6 +9,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, GLib
 
+from dfm.core.distro import install_hint
 from dfm.core.github_sync import get_repo_status, get_commit_history
 from dfm.ui.window_sync_push import on_push_clicked
 from dfm.ui.window_sync_pull import on_pull_clicked
@@ -230,7 +231,7 @@ class SyncSection:
         group = Adw.PreferencesGroup()
         group.set_title("Setup")
         group.set_description(
-            "Requires GitHub CLI (gh). Install: sudo pacman -S github-cli"
+            f"Requires GitHub CLI (gh). Install: {install_hint('github-cli')}"
         )
 
         init_row = Adw.ActionRow()
@@ -273,7 +274,7 @@ class SyncSection:
             "GitHub CLI Not Found",
             "The GitHub CLI (gh) is required for GitHub features.\n\n"
             "Install it with:\n"
-            "  sudo pacman -S github-cli\n\n"
+            f"  {install_hint('github-cli')}\n\n"
             "Then run: gh auth login",
         )
 

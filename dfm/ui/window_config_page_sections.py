@@ -168,7 +168,7 @@ def build_deps(entry: DotfileEntry) -> Gtk.Widget | None:
 
     for dep in deps:
         row = Adw.ActionRow()
-        row.set_title(dep.package)
+        row.set_title(dep.display_name)
         row.set_subtitle(dep.description)
         if dep.installed:
             icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")

@@ -1,5 +1,6 @@
 """Shell templates (Fish, Zsh)."""
 
+from dfm.core.distro import autoremove_alias, update_alias
 from dfm.core.templates.types import Template
 
 
@@ -34,8 +35,8 @@ alias gl='git log --oneline --graph'
 alias gd='git diff'
 
 # System
-alias update='sudo pacman -Syu'
-alias cleanup='sudo pacman -Rns (pacman -Qdtq)'
+alias update='@@UPDATE@@'
+alias cleanup='@@CLEANUP@@'
 
 # Prompt colors
 set -g fish_color_command green
@@ -93,6 +94,15 @@ zstyle ':vcs_info:git:*' formats '%b '
 setopt PROMPT_SUBST
 PROMPT='%F{blue}%~%f %F{green}${vcs_info_msg_0_}%f%# '
 """
+
+
+# The system aliases are filled in for whatever package manager this machine
+# actually has, so the generated config is usable as-is off Arch.
+_FISH_CONTENT = (
+    _FISH_CONTENT
+    .replace("@@UPDATE@@", update_alias())
+    .replace("@@CLEANUP@@", autoremove_alias(shell="fish"))
+)
 
 
 SHELLS: list[Template] = [
