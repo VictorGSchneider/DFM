@@ -204,7 +204,7 @@ def build_deps(entry: DotfileEntry) -> Gtk.Widget | None:
 
 
 def build_notes(builder, entry: DotfileEntry) -> Gtk.Widget:
-    group = Adw.PreferencesGroup(title="Notes & Tags")
+    group = Adw.PreferencesGroup(title="Notes &amp; Tags")
 
     note = get_note(entry.name)
     note_text = note.note if note else ""
