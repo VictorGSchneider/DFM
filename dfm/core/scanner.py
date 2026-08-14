@@ -172,9 +172,9 @@ def scan_dotfiles(home_dir: str | None = None) -> list[DotfileEntry]:
     if os.path.isdir(config_dir):
         for dirname, display_name in KNOWN_CONFIG_DIRS.items():
             dirpath = os.path.join(config_dir, dirname)
-            if os.path.exists(dirpath):
+            if os.path.isdir(dirpath):
                 config_file = _find_config_file(dirpath, dirname)
-                if os.path.isdir(dirpath) and config_file:
+                if config_file:
                     entries.append(DotfileEntry(
                         name=dirname,
                         display_name=display_name,
@@ -183,14 +183,14 @@ def scan_dotfiles(home_dir: str | None = None) -> list[DotfileEntry]:
                         config_file=config_file,
                         icon_name=_get_icon_for_config(dirname),
                     ))
-                elif os.path.isfile(dirpath):
-                    entries.append(DotfileEntry(
-                        name=dirname,
-                        display_name=display_name,
-                        path=dirpath,
-                        is_directory=False,
-                        icon_name=_get_icon_for_config(dirname),
-                    ))
+            elif os.path.isfile(dirpath):
+                entries.append(DotfileEntry(
+                    name=dirname,
+                    display_name=display_name,
+                    path=dirpath,
+                    is_directory=False,
+                    icon_name=_get_icon_for_config(dirname),
+                ))
 
     # Sort by display name
     entries.sort(key=lambda e: e.display_name.lower())
@@ -224,7 +224,7 @@ def _find_config_file(dirpath: str, dirname: str = "") -> str:
                 if ext in (".conf", ".ini", ".toml", ".yaml", ".yml", ".json",
                            ".cfg", ".lua"):
                     return fpath
-    except PermissionError:
+    except (PermissionError, NotADirectoryError, FileNotFoundError):
         pass
 
     # Fallback: any readable file
@@ -238,7 +238,7 @@ def _find_config_file(dirpath: str, dirname: str = "") -> str:
                     return fpath
                 except (UnicodeDecodeError, PermissionError):
                     continue
-    except PermissionError:
+    except (PermissionError, NotADirectoryError, FileNotFoundError):
         pass
 
     return ""

@@ -3,10 +3,16 @@
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gdk
+from gi.repository import Gtk, Adw, Gdk, GLib
 
 from dfm.core.parser import ConfigField, FieldType, ParsedConfig, BOOL_TRUE
 from dfm.core.scanner import DotfileEntry
+
+
+def _esc(text: str) -> str:
+    # Adw row titles/subtitles parse Pango markup; escape user-supplied
+    # text from config files so '&' and '<' don't blow up the parser.
+    return GLib.markup_escape_text(text or "")
 
 
 def auto_range(key: str, current_val: float) -> tuple[float, float, float]:
@@ -43,9 +49,9 @@ def create_field_row(builder, field: ConfigField, parsed: ParsedConfig,
                      entry: DotfileEntry) -> Adw.ActionRow | None:
     """Create a row widget appropriate for the field's type."""
     ftype = field.field_type if hasattr(field, "field_type") else getattr(field, "type", None)
-    key = field.key
+    key = _esc(field.key)
     value = field.value
-    description = getattr(field, "comment", "") or ""
+    description = _esc(getattr(field, "comment", "") or "")
 
     if ftype == FieldType.COMMENT:
         return None
