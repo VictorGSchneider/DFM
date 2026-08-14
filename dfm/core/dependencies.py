@@ -2,20 +2,39 @@
 
 import os
 import shutil
-import subprocess
 from dataclasses import dataclass
+
+from dfm.core.distro import install_command, is_installed, package_name
 
 
 @dataclass
 class Dependency:
-    """A package dependency for a dotfile."""
+    """A package dependency for a dotfile.
+
+    `package` is the canonical id used by the tables below; `local_name` is
+    what the running system's package manager calls it. They are the same on
+    Arch, where the canonical ids come from, and differ elsewhere.
+    """
     package: str
     description: str
     installed: bool
     optional: bool = False
+    local_name: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.local_name:
+            self.local_name = self.package
+
+    @property
+    def display_name(self) -> str:
+        """Package name to show the user, annotated when it was translated."""
+        if self.local_name != self.package:
+            return f"{self.local_name} ({self.package})"
+        return self.package
 
 
-# Map of dotfile names/patterns to their dependencies
+# Map of dotfile names/patterns to their dependencies. Package names here are
+# canonical ids (Arch names); dfm.core.distro translates them per system.
 _DEPENDENCY_MAP: dict[str, list[tuple[str, str, bool]]] = {
     # (package_name, description, optional)
     "i3": [
@@ -138,17 +157,15 @@ _DEPENDENCY_MAP: dict[str, list[tuple[str, str, bool]]] = {
 }
 
 
-def _is_installed(package: str) -> bool:
-    """Check if a package is installed via pacman."""
-    try:
-        result = subprocess.run(
-            ["pacman", "-Qi", package],
-            capture_output=True, timeout=5,
-        )
-        return result.returncode == 0
-    except (subprocess.SubprocessError, FileNotFoundError):
-        # Fallback: check if command exists
-        return shutil.which(package) is not None
+def _make(package: str, description: str, optional: bool,
+          installed: bool | None = None) -> Dependency:
+    return Dependency(
+        package=package,
+        description=description,
+        installed=is_installed(package) if installed is None else installed,
+        optional=optional,
+        local_name=package_name(package),
+    )
 
 
 def get_dependencies(entry) -> list[Dependency]:
@@ -164,20 +181,15 @@ def get_dependencies(entry) -> list[Dependency]:
             for pkg, desc, optional in dep_list:
                 if pkg not in seen:
                     seen.add(pkg)
-                    deps.append(Dependency(
-                        package=pkg,
-                        description=desc,
-                        installed=_is_installed(pkg),
-                        optional=optional,
-                    ))
+                    deps.append(_make(pkg, desc, optional))
 
     config_path = entry.get_config_path() or entry.path
     if os.path.splitext(str(config_path))[1].lower() == ".lua" and "lua" not in seen:
-        deps.append(Dependency(
-            package="lua",
-            description="Lua interpreter (luac validates Lua configs)",
-            installed=_is_installed("lua") or shutil.which("luac") is not None,
-            optional=True,
+        deps.append(_make(
+            "lua",
+            "Lua interpreter (luac validates Lua configs)",
+            True,
+            installed=is_installed("lua") or shutil.which("luac") is not None,
         ))
 
     return deps
@@ -185,7 +197,9 @@ def get_dependencies(entry) -> list[Dependency]:
 
 def get_install_command(deps: list[Dependency],
                         only_missing: bool = True) -> str | None:
-    """Generate pacman install command for missing dependencies."""
+    """Install command for the given dependencies, in the local package
+    manager's syntax. None if nothing is missing, or if we don't recognise
+    this system's package manager."""
     packages = []
     for dep in deps:
         if only_missing and dep.installed:
@@ -193,7 +207,4 @@ def get_install_command(deps: list[Dependency],
         if not dep.optional or not only_missing:
             packages.append(dep.package)
 
-    if not packages:
-        return None
-
-    return f"sudo pacman -S {' '.join(packages)}"
+    return install_command(packages)

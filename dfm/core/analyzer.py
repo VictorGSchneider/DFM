@@ -15,6 +15,7 @@ from dfm.core.analyzer_lua import (
 from dfm.core.validator import validate_file
 from dfm.core.conflicts import detect_conflicts
 from dfm.core.dependencies import get_dependencies
+from dfm.core.distro import install_hint
 
 
 def analyze_all(entries: list[DotfileEntry]) -> FullAnalysis:
@@ -83,19 +84,19 @@ def analyze_entry(entry: DotfileEntry) -> FileAnalysis:
             fa.issues.append(Issue(
                 severity=IssueSeverity.ERROR,
                 title="Missing dependency",
-                detail=f"Required package '{dep.package}' is not installed",
+                detail=f"Required package '{dep.display_name}' is not installed",
                 file_path=file_path,
                 category="dependency",
-                fix_hint=f"sudo pacman -S {dep.package}",
+                fix_hint=install_hint(dep.package),
             ))
         elif not dep.installed and dep.optional:
             fa.issues.append(Issue(
                 severity=IssueSeverity.INFO,
                 title="Optional dependency",
-                detail=f"Optional package '{dep.package}' ({dep.description}) not installed",
+                detail=f"Optional package '{dep.display_name}' ({dep.description}) not installed",
                 file_path=file_path,
                 category="dependency",
-                fix_hint=f"sudo pacman -S {dep.package}",
+                fix_hint=install_hint(dep.package),
             ))
 
     return fa

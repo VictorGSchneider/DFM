@@ -290,7 +290,7 @@ class DfmWindow(Adw.ApplicationWindow):
         about.set_developer_name("DFM Contributors")
         about.set_license_type(Gtk.License.GPL_3_0)
         about.set_comments(
-            "A graphical dotfile manager for Arch Linux.\n"
+            "A graphical dotfile manager for Linux.\n"
             "Detect, configure, import/export, and sync your "
             "dotfiles with GitHub."
         )

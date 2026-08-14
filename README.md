@@ -1,6 +1,6 @@
 # DFM - Dotfile Manager
 
-A GTK4/Adwaita GUI application for managing dotfiles on Arch Linux.
+A GTK4/Adwaita GUI application for managing dotfiles on Linux.
 
 **DFM does not move or centralize your dotfiles.** Each config file stays in its original location (`~/.bashrc`, `~/.config/hypr/hyprland.conf`, etc.). DFM detects them, lets you edit in place through a friendly GUI, and creates automatic backups before any change.
 
@@ -110,7 +110,8 @@ A dedicated diagnostics page that scans all your dotfiles at once and reports is
 - Empty values that may be unintentional
 - Insecure permissions on sensitive files (world-readable `.netrc`, etc.)
 - Deprecated or problematic patterns (double PATH append, eval ssh-agent)
-- Missing required and optional package dependencies (checked via pacman)
+- Missing required and optional package dependencies (checked against the
+  system's own package manager — pacman, apt, dnf, zypper, apk, xbps or Portage)
 
 **Cross-file conflict detection:**
 - Environment variables set to different values across shells (e.g. `EDITOR` in `.bashrc` vs `.zshrc`)
@@ -122,7 +123,8 @@ A dedicated diagnostics page that scans all your dotfiles at once and reports is
 **UI features:**
 - Summary cards showing total files scanned, errors, warnings, and healthy count
 - Color-coded severity badges (terracotta for errors, gold for warnings, azure for info)
-- Fix hints with one-click copy (e.g. `sudo pacman -S hyprland`, `chmod 600 ~/.netrc`)
+- Fix hints with one-click copy, in the local package manager's syntax
+  (`sudo pacman -S hyprland` on Arch, `sudo apt install hyprland` on Debian)
 - Navigate directly from an issue to the dotfile's config page
 
 ### File Change Monitoring
@@ -182,19 +184,41 @@ Export your dotfiles as a `.tar.gz` archive with a manifest and import them on a
 - GitHub CLI (`gh`) — optional, required for GitHub sync features
 - `lua` — optional, enables full syntax checking of Lua configs via `luac`
 
-### Install on Arch Linux
+### Installing the system dependencies
+
+DFM runs on any distro with GTK4 and libadwaita. Package names differ, so
+pick the line for your system:
 
 ```bash
-# Required
+# Arch / Manjaro / EndeavourOS
 sudo pacman -S python python-gobject gtk4 libadwaita
 
-# Optional (for GitHub sync)
-sudo pacman -S github-cli
-gh auth login
+# Debian / Ubuntu / Mint
+sudo apt install python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 
-# Optional (syntax checking of Lua configs)
-sudo pacman -S lua
+# Fedora / RHEL / Rocky
+sudo dnf install python3 python3-gobject gtk4 libadwaita
+
+# openSUSE
+sudo zypper install python3 python3-gobject gtk4 libadwaita
+
+# Alpine
+sudo apk add python3 py3-gobject3 gtk4.0 libadwaita
+
+# Void
+sudo xbps-install -S python3 python3-gobject gtk4 libadwaita
 ```
+
+Optional extras, whatever the distro:
+
+- **GitHub CLI** (`gh`) for the sync features — then `gh auth login`
+- **Lua** for full syntax checking of Lua configs via `luac`; without it DFM
+  falls back to a structural check
+
+DFM detects your package manager at runtime, so the Analyzer's dependency
+checks and its one-click fix hints come out in your system's own syntax. On a
+distro it doesn't recognise it still runs — it just stops offering install
+commands it can't be sure of.
 
 ## Usage
 
