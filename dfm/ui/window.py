@@ -76,7 +76,11 @@ class DfmWindow(Adw.ApplicationWindow):
         self.paned.set_start_child(self._sidebar.build())
 
         self._toast_overlay = Adw.ToastOverlay()
+        self._toast_overlay.set_hexpand(True)
+        self._toast_overlay.set_vexpand(True)
         self.content_stack = Gtk.Stack()
+        self.content_stack.set_hexpand(True)
+        self.content_stack.set_vexpand(True)
         self.content_stack.set_transition_type(
             Gtk.StackTransitionType.CROSSFADE
         )
@@ -85,6 +89,7 @@ class DfmWindow(Adw.ApplicationWindow):
 
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         main_box.append(header)
+        self.paned.set_vexpand(True)
         main_box.append(self.paned)
         self.set_content(main_box)
 
