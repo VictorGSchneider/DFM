@@ -127,7 +127,7 @@ class PushTests(Sandbox):
 class PullTests(Sandbox):
     def test_pull_follows_the_tracked_branch_not_the_remote_default(self):
         """The remote's HEAD may name a different branch than the one we push to."""
-        work = self.make_repo()  # pushes `main`; the bare repo's HEAD says `master`
+        self.make_repo()  # pushes `main`; the bare repo's HEAD says `master`
         other = self.home / "other"
         self.git("clone", "-q", "-b", "main", str(self.home / "remote.git"), str(other))
         (other / ".bashrc").write_text("export A=2\n")
