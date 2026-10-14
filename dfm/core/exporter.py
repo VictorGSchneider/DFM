@@ -7,7 +7,6 @@ import tarfile
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from dataclasses import asdict
 
 from dfm.core.scanner import DotfileEntry
 
@@ -110,7 +109,8 @@ def _copy_entries_to_dir(entries: list[DotfileEntry], dest_dir: str) -> None:
 
         if entry.is_directory:
             if os.path.isdir(entry.path):
-                shutil.copytree(entry.path, dest_path, dirs_exist_ok=True)
+                shutil.copytree(entry.path, dest_path, dirs_exist_ok=True,
+                                ignore_dangling_symlinks=True)
         else:
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             if os.path.isfile(entry.path):
@@ -203,6 +203,18 @@ def _plan_import(source_dir: str, manifest: dict | None,
     return actions
 
 
+def _backup_overwritten(source_dir: str, target_dir: str) -> None:
+    """Back up every existing file a directory import is about to overwrite."""
+    from dfm.core.backup import create_backup
+
+    for root, _dirs, files in os.walk(source_dir):
+        rel_root = os.path.relpath(root, source_dir)
+        for fname in files:
+            existing = os.path.normpath(os.path.join(target_dir, rel_root, fname))
+            if os.path.isfile(existing):
+                create_backup(existing, reason="import")
+
+
 def _execute_import(actions: list[dict]) -> None:
     """Execute planned import actions."""
     from dfm.core.backup import create_backup
@@ -218,7 +230,9 @@ def _execute_import(actions: list[dict]) -> None:
         # Copy new file
         try:
             if action.get("is_directory") and os.path.isdir(source):
-                shutil.copytree(source, target, dirs_exist_ok=True)
+                _backup_overwritten(source, target)
+                shutil.copytree(source, target, dirs_exist_ok=True,
+                                ignore_dangling_symlinks=True)
             else:
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 shutil.copy2(source, target)

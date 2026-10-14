@@ -1,5 +1,6 @@
 """Profile system - save/load dotfile configuration sets."""
 
+import hashlib
 import os
 import json
 import shutil
@@ -35,6 +36,28 @@ class Profile:
     @property
     def enabled_count(self) -> int:
         return sum(1 for e in self.entries.values() if e.get("enabled"))
+
+
+def _profile_dir(name: str) -> Path | None:
+    """Directory holding a profile, or None for a name that can't be stored.
+
+    Names are sanitized for the filesystem, so different names can sanitize to
+    the same folder ("a b" / "a_b"); the later one gets a hash suffix instead of
+    silently overwriting the first.
+    """
+    if not name.strip():
+        return None
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
+    base = PROFILES_DIR / safe
+    try:
+        with open(base / "profile.json") as f:
+            stored = json.load(f).get("name")
+    except (OSError, ValueError, AttributeError):
+        stored = None
+    if stored is None or stored == name:
+        return base
+    digest = hashlib.sha1(name.encode()).hexdigest()[:8]
+    return PROFILES_DIR / f"{safe}-{digest}"
 
 
 def ensure_profiles_dir() -> Path:
@@ -78,12 +101,13 @@ def save_profile(name: str, description: str,
     """
     ensure_profiles_dir()
 
-    safe_name = "".join(c if c.isalnum() or c in "-_" else "_"
-                        for c in name)
-    profile_dir = PROFILES_DIR / safe_name
+    profile_dir = _profile_dir(name)
+    if profile_dir is None:
+        raise ValueError("Profile name cannot be empty")
     profile_dir.mkdir(parents=True, exist_ok=True)
     configs_dir = profile_dir / "configs"
-    configs_dir.mkdir(exist_ok=True)
+    shutil.rmtree(configs_dir, ignore_errors=True)  # drop snapshots of removed entries
+    configs_dir.mkdir()
 
     now = time.time()
     entries = {}
@@ -130,13 +154,10 @@ def load_profile(profile_name: str, dotfile_entries: list) -> list[str]:
 
     Returns list of actions taken.
     """
-    safe_name = "".join(c if c.isalnum() or c in "-_" else "_"
-                        for c in profile_name)
-    profile_dir = PROFILES_DIR / safe_name
-    meta_path = profile_dir / "profile.json"
-
-    if not meta_path.is_file():
+    profile_dir = _profile_dir(profile_name)
+    if profile_dir is None or not (profile_dir / "profile.json").is_file():
         return [f"Profile '{profile_name}' not found"]
+    meta_path = profile_dir / "profile.json"
 
     try:
         with open(meta_path) as f:
@@ -180,11 +201,11 @@ def load_profile(profile_name: str, dotfile_entries: list) -> list[str]:
 
 def delete_profile(profile_name: str) -> bool:
     """Delete a profile."""
-    safe_name = "".join(c if c.isalnum() or c in "-_" else "_"
-                        for c in profile_name)
-    profile_dir = PROFILES_DIR / safe_name
+    profile_dir = _profile_dir(profile_name)
+    if profile_dir is None or profile_dir == PROFILES_DIR:
+        return False
 
-    if profile_dir.is_dir():
+    if (profile_dir / "profile.json").is_file():
         shutil.rmtree(profile_dir)
         return True
     return False
@@ -192,13 +213,10 @@ def delete_profile(profile_name: str) -> bool:
 
 def export_profile_json(profile_name: str) -> str | None:
     """Export a profile as a JSON string for sharing."""
-    safe_name = "".join(c if c.isalnum() or c in "-_" else "_"
-                        for c in profile_name)
-    profile_dir = PROFILES_DIR / safe_name
-    meta_path = profile_dir / "profile.json"
-
-    if not meta_path.is_file():
+    profile_dir = _profile_dir(profile_name)
+    if profile_dir is None or not (profile_dir / "profile.json").is_file():
         return None
+    meta_path = profile_dir / "profile.json"
 
     try:
         with open(meta_path) as f:
@@ -214,7 +232,7 @@ def export_profile_json(profile_name: str) -> str | None:
                     snapshot_path = configs_dir / snapshot
                     if snapshot_path.is_file():
                         try:
-                            config_contents[entry_name] = snapshot_path.read_text()
+                            config_contents[entry_name] = snapshot_path.read_text(errors="replace")
                         except OSError:
                             pass
             data["config_contents"] = config_contents
