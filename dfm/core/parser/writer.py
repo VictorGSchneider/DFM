@@ -8,6 +8,7 @@ import tempfile
 
 from dfm.core.parser.types import ConfigField, FieldType, BOOL_TRUE, BOOL_FALSE
 from dfm.core.parser.detect import detect_format
+from dfm.core.parser.values import is_quoted, split_value
 from dfm.core.parser.handlers_lua import ASSIGNMENT as LUA_ASSIGNMENT
 from dfm.core.parser.handlers_lua import LONG_STRING, is_literal, split_lua_comment
 
@@ -95,33 +96,13 @@ def _split_eol(line: str) -> tuple[str, str]:
     return body, line[len(body):]
 
 
-def _split_value(rest: str, comments: bool, bare_stops_at_space: bool = False
-                 ) -> tuple[str, str]:
-    """Split `rest` into (value token, untouched tail such as a comment)."""
-    if rest[:1] in ("'", '"'):
-        quote = rest[0]
-        i = 1
-        while i < len(rest):
-            if rest[i] == "\\" and quote == '"':
-                i += 2
-                continue
-            if rest[i] == quote:
-                return rest[:i + 1], rest[i + 1:]
-            i += 1
-        return rest, ""
-    if bare_stops_at_space:
-        m = re.match(r"^(\S*)(.*)$", rest)
-        return m.group(1), m.group(2)
-    if comments:
-        m = re.search(r"\s+#", rest)
-        if m:
-            return rest[:m.start()], rest[m.start():]
-    token = rest.rstrip()
-    return token, rest[len(token):]
+def _split_value(rest: str, comments: bool, bare_stops_at_space: bool = False,
+                 terminator: bool = False) -> tuple[str, str]:
+    return split_value(rest, comments, bare_stops_at_space, terminator)
 
 
 def _is_quoted(token: str) -> bool:
-    return len(token) >= 2 and token[0] in "'\"" and token[-1] == token[0]
+    return is_quoted(token)
 
 
 def _quote(new_value: str, quote: str) -> str:
@@ -196,7 +177,8 @@ def _rebuild_body(body: str, field: ConfigField, new_value: str, fmt: str) -> st
         indent, key, sep, rest = m.groups()
         if not _key_matches(field.key, key):
             return None
-        token, tail = _split_value(rest, comments=(fmt == "toml"))
+        token, tail = _split_value(rest, comments=(fmt == "toml"),
+                                   terminator=(fmt == "generic"))
         if fmt == "toml" and _bracket_open(token):
             return None  # array/table spans several lines
         if fmt == "ini":
@@ -206,7 +188,7 @@ def _rebuild_body(body: str, field: ConfigField, new_value: str, fmt: str) -> st
     if fmt == "generic":
         m = _COLON_LINE.match(body)
         if m and _key_matches(field.key, m.group(2)):
-            token, tail = _split_value(m.group(4), comments=False)
+            token, tail = _split_value(m.group(4), comments=False, terminator=True)
             new = _format_value(token, new_value, fmt)
             return f"{m.group(1)}{m.group(2)}{m.group(3)}{new}{tail}"
         m = _WORD_LINE.match(body)
@@ -221,6 +203,30 @@ def _bracket_open(token: str) -> bool:
             != stripped.count("]") + stripped.count("}"))
 
 
+def _json_container_end(rest: str) -> int | None:
+    """Index just past the bracket closing rest[0], if it closes on this line."""
+    depth = 0
+    in_string = False
+    i = 0
+    while i < len(rest):
+        ch = rest[i]
+        if in_string:
+            if ch == "\\":
+                i += 1
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return None
+
+
 def _rebuild_json(body: str, field: ConfigField, new_value: str) -> str | None:
     m = _JSON_LINE.match(body)
     if not m:
@@ -228,8 +234,17 @@ def _rebuild_json(body: str, field: ConfigField, new_value: str) -> str | None:
     indent, key, colon, rest = m.groups()
     if not _key_matches(field.key, json.loads(key)):
         return None
-    if not rest or rest[0] in "{[":
+    if not rest:
         return None
+    if rest[0] in "{[":
+        end = _json_container_end(rest)
+        if end is None:
+            return None  # spans several lines
+        try:
+            json.loads(new_value)
+        except ValueError:
+            return None
+        return f"{indent}{key}{colon}{new_value.strip()}{rest[end:]}"
     if rest[0] == '"':
         _, tail = _split_value(rest, comments=False)
         new = json.dumps(new_value, ensure_ascii=False)

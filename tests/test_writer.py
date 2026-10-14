@@ -177,5 +177,59 @@ class EditTests(unittest.TestCase):
         with open(path, "rb") as f:
             self.assertEqual(f.read(), b"# caf\xe9\nexport A=2\n")
 
+class TerminatedSyntaxTests(unittest.TestCase):
+    """rofi (.rasi) and picom (libconfig) end every value with ';'."""
+
+    PICOM = 'backend = "glx";\ninactive-opacity = 0.9;\nshadow = true;\n'
+    ROFI = 'configuration {\n    modi: "drun,run";\n    width: 40%;\n}\n'
+
+    def test_values_are_read_without_quotes_or_semicolon(self):
+        path = _write("picom.conf", self.PICOM)
+        self.assertEqual(_field(path, "backend").value, "glx")
+        self.assertEqual(_field(path, "inactive-opacity").value, "0.9")
+        self.assertEqual(_field(path, "shadow").value, "true")
+        path = _write("config.rasi", self.ROFI)
+        self.assertEqual(_field(path, "modi").value, "drun,run")
+        self.assertEqual(_field(path, "width").value, "40%")
+
+    def test_numbers_are_recognised_despite_the_semicolon(self):
+        path = _write("picom.conf", self.PICOM)
+        self.assertEqual(_field(path, "inactive-opacity").field_type, FieldType.SLIDER)
+
+    def test_edits_keep_quotes_and_semicolon(self):
+        self.assertEqual(_edit("picom.conf", self.PICOM, "inactive-opacity", "0.5"),
+                         self.PICOM.replace("0.9", "0.5"))
+        self.assertEqual(_edit("picom.conf", self.PICOM, "backend", "xrender"),
+                         self.PICOM.replace("glx", "xrender"))
+        self.assertEqual(_edit("config.rasi", self.ROFI, "modi", "drun"),
+                         self.ROFI.replace("drun,run", "drun"))
+        self.assertEqual(_edit("config.rasi", self.ROFI, "width", "50%"),
+                         self.ROFI.replace("40%", "50%"))
+
+
+class JsonContainerTests(unittest.TestCase):
+    CONTENT = ('{\n  "modules-left": ["a", "b"],\n  "nested": {"k": 1},\n'
+               '  "tail": [1, 2]\n}\n')
+
+    def test_single_line_array_can_be_replaced(self):
+        out = _edit("a.json", self.CONTENT, "modules-left", '["x"]')
+        self.assertEqual(out, self.CONTENT.replace('["a", "b"]', '["x"]'))
+        out = _edit("a.json", self.CONTENT, "tail", "[3]")
+        self.assertEqual(out, self.CONTENT.replace("[1, 2]", "[3]"))
+
+    def test_invalid_json_text_is_refused(self):
+        path = _write("a.json", self.CONTENT)
+        self.assertFalse(update_config_value(path, _field(path, "modules-left"), "[oops"))
+        with open(path) as f:
+            self.assertEqual(f.read(), self.CONTENT)
+
+    def test_multiline_array_is_refused(self):
+        content = '{\n  "a": [\n    1,\n    2\n  ]\n}\n'
+        path = _write("a.json", content)
+        self.assertFalse(update_config_value(path, _field(path, "a"), "[3]"))
+        with open(path) as f:
+            self.assertEqual(f.read(), content)
+
+
 if __name__ == "__main__":
     unittest.main()

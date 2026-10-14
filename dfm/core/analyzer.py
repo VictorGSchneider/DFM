@@ -198,7 +198,7 @@ def _first_word(text: str) -> str:
 
 # Directives that legitimately appear many times (Hyprland, sway/i3, ...)
 _REPEATABLE_KEYS = re.compile(
-    r"^(bind\w*|unbind|windowrule\w*|layerrule|exec[\w\-]*|env|monitor|workspace|"
+    r"^(bind[\w\-]*|unbind[\w\-]*|windowrule\w*|layerrule|exec[\w\-]*|env|monitor|workspace|"
     r"animation|bezier|device|plugin|source|submap|wallpaper|preload|"
     r"for_window|assign|set|font|mode|output|input)$"
 )

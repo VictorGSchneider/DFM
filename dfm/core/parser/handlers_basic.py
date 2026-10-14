@@ -4,6 +4,7 @@ import re
 
 from dfm.core.parser.types import ConfigField, FieldType
 from dfm.core.parser.infer import make_display_name
+from dfm.core.parser.values import is_quoted, split_value
 
 
 def parse_ini(content: str) -> list[ConfigField]:
@@ -125,7 +126,9 @@ def parse_generic(content: str) -> list[ConfigField]:
 
         match = re.match(r"^([\w.\-]+)\s*[=:]\s*(.*)", stripped)
         if match:
-            key, value = match.group(1), match.group(2).strip().strip("\"'")
+            key = match.group(1)
+            token, _ = split_value(match.group(2).strip(), terminator=True)
+            value = token[1:-1] if is_quoted(token) else token
             fields.append(ConfigField(
                 key=key,
                 display_name=make_display_name(key),
