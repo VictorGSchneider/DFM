@@ -7,7 +7,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib
 
-from dfm.core.scanner import scan_dotfiles, DotfileEntry
+from dfm.core.scanner import scan_dotfiles, carry_over_enabled, DotfileEntry
 from dfm.core.monitor import DotfileMonitor
 from dfm.ui.window_sidebar import SidebarManager
 from dfm.ui.window_all_dotfiles import AllDotfilesPage
@@ -169,7 +169,9 @@ class DfmWindow(Adw.ApplicationWindow):
 
     def _scan_and_populate(self) -> None:
         """Scan for dotfiles and populate all UI."""
+        previous = self.dotfiles
         self.dotfiles = scan_dotfiles()
+        carry_over_enabled(self.dotfiles, previous)
 
         while True:
             child = self.content_stack.get_first_child()
@@ -249,7 +251,10 @@ class DfmWindow(Adw.ApplicationWindow):
     # ── Tool dialogs ────────────────────────────────────────────────
 
     def _on_profiles(self) -> None:
-        ProfilesDialog(self, self.dotfiles).present()
+        ProfilesDialog(
+            self, self.dotfiles, on_rescan_cb=self._scan_and_populate,
+            get_dotfiles_cb=lambda: self.dotfiles,
+        ).present()
 
     def _on_templates(self) -> None:
         TemplatesDialog(self, on_rescan_cb=self._scan_and_populate).present()
