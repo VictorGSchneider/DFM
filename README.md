@@ -178,9 +178,11 @@ Export your dotfiles as a `.tar.gz` archive with a manifest and import them on a
 ## Dependencies
 
 - Python 3.10+
-- GTK 4
-- libadwaita
+- GTK 4.12 or newer
+- libadwaita 1.5 or newer (Debian 12 and Ubuntu 22.04 ship older versions)
 - PyGObject
+- PyYAML (YAML parsing)
+- `tomli` — only on Python 3.10 (TOML parsing; built in from 3.11)
 - GitHub CLI (`gh`) — optional, required for GitHub sync features
 - `lua` — optional, enables full syntax checking of Lua configs via `luac`
 
