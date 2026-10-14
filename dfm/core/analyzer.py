@@ -2,9 +2,11 @@
 
 import os
 import re
+import shlex
 import stat
 from pathlib import Path
 
+from dfm.core.parser.detect import detect_format
 from dfm.core.scanner import DotfileEntry
 from dfm.core.analyzer_types import (
     IssueSeverity, Issue, FileAnalysis, FullAnalysis,
@@ -141,8 +143,6 @@ def _check_file_status(fa: FileAnalysis, file_path: str) -> None:
 def _check_broken_references(fa: FileAnalysis, lines: list[str],
                               file_path: str) -> None:
     """Check for source/include references to files that don't exist."""
-    home = str(Path.home())
-
     if is_lua(file_path):
         check_lua_requires(fa, lines, file_path)
         return
@@ -155,13 +155,11 @@ def _check_broken_references(fa: FileAnalysis, lines: list[str],
         # source ~/.something or . ~/.something
         match = re.match(r'^(?:source|\.)\s+(.+)', stripped)
         if match:
-            ref_path = match.group(1).strip().strip("\"'")
-            ref_path = os.path.expanduser(ref_path)
-            ref_path = os.path.expandvars(ref_path)
-            # Skip if it contains unresolved variables
-            if "$" in ref_path or "$(command" in ref_path:
-                continue
-            if not os.path.exists(ref_path):
+            ref_path = _first_word(match.group(1))
+            ref_path = os.path.expandvars(os.path.expanduser(ref_path))
+            # Skip anything we can't resolve statically: $VAR, $(cmd), <(cmd), `cmd`
+            if ref_path and not re.search(r"[$`<>(]", ref_path) \
+                    and not os.path.exists(ref_path):
                 fa.issues.append(Issue(
                     severity=IssueSeverity.WARNING,
                     title="Missing sourced file",
@@ -169,13 +167,13 @@ def _check_broken_references(fa: FileAnalysis, lines: list[str],
                     file_path=file_path,
                     line_number=i,
                     category="reference",
-                    fix_hint=f"Create the file or remove the source line",
+                    fix_hint="Create the file or remove the source line",
                 ))
 
         # include directives (common in some configs)
         match = re.match(r'^(?:include|@import)\s+(.+)', stripped)
         if match:
-            ref_path = match.group(1).strip().strip("\"';")
+            ref_path = _first_word(match.group(1).rstrip("; "))
             if ref_path.startswith(("~", "/")):
                 ref_path = os.path.expanduser(ref_path)
                 if not os.path.exists(ref_path):
@@ -189,6 +187,23 @@ def _check_broken_references(fa: FileAnalysis, lines: list[str],
                     ))
 
 
+def _first_word(text: str) -> str:
+    """First shell word of `text`: handles quotes and drops a trailing comment."""
+    try:
+        words = shlex.split(text, comments=True)
+    except ValueError:  # unbalanced quote
+        words = text.split()
+    return words[0] if words else ""
+
+
+# Directives that legitimately appear many times (Hyprland, sway/i3, ...)
+_REPEATABLE_KEYS = re.compile(
+    r"^(bind\w*|unbind|windowrule\w*|layerrule|exec[\w\-]*|env|monitor|workspace|"
+    r"animation|bezier|device|plugin|source|submap|wallpaper|preload|"
+    r"for_window|assign|set|font|mode|output|input)$"
+)
+
+
 def _check_duplicate_keys(fa: FileAnalysis, lines: list[str],
                            file_path: str) -> None:
     """Detect duplicate key definitions (potential shadowing)."""
@@ -196,20 +211,39 @@ def _check_duplicate_keys(fa: FileAnalysis, lines: list[str],
         check_lua_duplicate_keys(fa, lines, file_path)
         return
 
-    seen_keys: dict[str, list[int]] = {}
+    fmt = detect_format(file_path, "\n".join(lines))
+    seen_keys: dict[tuple, list[int]] = {}
+    section = ""
+    parents: list[tuple[int, str]] = []  # YAML-style nesting by indentation
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
-        if not stripped or stripped.startswith(("#", ";", "//", "!", "[")):
+        if not stripped or stripped.startswith(("#", ";", "//", "!")):
             continue
+        if stripped.startswith("["):
+            section = stripped  # [table] / [[array]] / [section]
+            parents = []
+            continue
+
+        indent = len(line) - len(line.lstrip())
+        if fmt == "shell" and indent:
+            continue  # inside if/case/function: branches may redefine on purpose
 
         # key=value or key: value or export KEY=value
         match = re.match(r'^(?:export\s+)?([\w.\-]+)\s*[=:]\s*', stripped)
-        if match:
-            key = match.group(1)
-            seen_keys.setdefault(key, []).append(i)
+        if not match:
+            continue
+        key = match.group(1)
+        if _REPEATABLE_KEYS.match(key):
+            continue
 
-    for key, line_numbers in seen_keys.items():
+        while parents and parents[-1][0] >= indent:
+            parents.pop()
+        scope = (section, tuple(k for _, k in parents))
+        parents.append((indent, key))
+        seen_keys.setdefault((scope, key), []).append(i)
+
+    for (_, key), line_numbers in seen_keys.items():
         if len(line_numbers) > 1:
             lines_str = ", ".join(str(n) for n in line_numbers)
             fa.issues.append(Issue(

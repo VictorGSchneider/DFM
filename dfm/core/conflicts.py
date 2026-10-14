@@ -15,13 +15,10 @@ class Conflict:
     severity: str = "warning"  # "info", "warning", "error"
 
 
-# Known conflict patterns
-_ENV_VAR_PATTERN = re.compile(
-    r'(?:export\s+|set\s+-gx\s+|set\s+)(\w+)\s*=?\s*(.+)', re.MULTILINE
-)
-_ALIAS_PATTERN = re.compile(
-    r'(?:alias\s+)(\w+)\s*=\s*(.+)', re.MULTILINE
-)
+# Known conflict patterns (matched against one stripped, non-comment line)
+_ENV_VAR_PATTERN = re.compile(r"^export\s+([A-Za-z_]\w*)=(.*)$")
+_FISH_ENV_PATTERN = re.compile(r"^set\s+(?:-[A-Za-z]+\s+)*([A-Za-z_]\w*)\s+(\S.*)$")
+_ALIAS_PATTERN = re.compile(r"^alias\s+([^\s=]+)(?:=|\s+)(.+)$")
 _PATH_PATTERNS = {
     "EDITOR": "Default editor",
     "VISUAL": "Visual editor",
@@ -30,6 +27,14 @@ _PATH_PATTERNS = {
     "SHELL": "Default shell",
     "PAGER": "Default pager",
 }
+
+
+def _unquote(value: str) -> str:
+    """Strip one matching pair of surrounding quotes, like a shell would."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
 
 
 def detect_conflicts(entries: list[DotfileEntry]) -> list[Conflict]:
@@ -60,26 +65,29 @@ def detect_conflicts(entries: list[DotfileEntry]) -> list[Conflict]:
             continue
 
         try:
-            with open(config_path) as f:
+            with open(config_path, errors="replace") as f:
                 content = f.read()
         except OSError:
             continue
 
-        # Find env vars
-        for match in _ENV_VAR_PATTERN.finditer(content):
-            var_name = match.group(1)
-            var_value = match.group(2).strip().strip('"\'')
-            env_vars.setdefault(var_name, []).append(
-                (entry.display_name, var_value)
-            )
+        is_fish = "fish" in name_lower or "fish" in display_lower
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
 
-        # Find aliases
-        for match in _ALIAS_PATTERN.finditer(content):
-            alias_name = match.group(1)
-            alias_value = match.group(2).strip().strip('"\'')
-            aliases.setdefault(alias_name, []).append(
-                (entry.display_name, alias_value)
-            )
+            match = _ENV_VAR_PATTERN.match(line)
+            if match is None and is_fish:
+                match = _FISH_ENV_PATTERN.match(line)
+            if match:
+                env_vars.setdefault(match.group(1), []).append(
+                    (entry.display_name, _unquote(match.group(2))))
+                continue
+
+            match = _ALIAS_PATTERN.match(line)
+            if match:
+                aliases.setdefault(match.group(1), []).append(
+                    (entry.display_name, _unquote(match.group(2))))
 
     # Check for conflicting env vars
     for var_name, definitions in env_vars.items():

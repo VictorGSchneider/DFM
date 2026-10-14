@@ -231,11 +231,11 @@ def _rebuild_json(body: str, field: ConfigField, new_value: str) -> str | None:
     if not rest or rest[0] in "{[":
         return None
     if rest[0] == '"':
-        token, tail = _split_value(rest, comments=False)
+        _, tail = _split_value(rest, comments=False)
         new = json.dumps(new_value, ensure_ascii=False)
     else:
         match = re.match(r"^([^,\s]*)(.*)$", rest)
-        token, tail = match.group(1), match.group(2)
+        tail = match.group(2)
         literal = new_value.strip()
         if _JSON_LITERAL.match(literal):
             new = literal

@@ -31,7 +31,7 @@ def validate_file(file_path: str) -> ValidationResult:
         return ValidationResult(False, ["File not found"], [])
 
     try:
-        with open(file_path) as f:
+        with open(file_path, errors="replace") as f:
             content = f.read()
     except OSError as e:
         return ValidationResult(False, [f"Cannot read: {e}"], [])

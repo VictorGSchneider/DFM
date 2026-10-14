@@ -8,13 +8,13 @@ def file_diff(path_a: str, path_b: str,
               label_a: str = "old", label_b: str = "new") -> str:
     """Generate unified diff between two files."""
     try:
-        with open(path_a) as f:
+        with open(path_a, errors="replace") as f:
             lines_a = f.readlines()
     except OSError:
         lines_a = []
 
     try:
-        with open(path_b) as f:
+        with open(path_b, errors="replace") as f:
             lines_b = f.readlines()
     except OSError:
         lines_b = []
@@ -25,6 +25,14 @@ def file_diff(path_a: str, path_b: str,
         tofile=label_b,
     )
     return "".join(diff)
+
+
+def _is_within(path: str, directory: str) -> bool:
+    """True if `path` is `directory` or lives under it (not just a name prefix)."""
+    try:
+        return os.path.commonpath([path, directory]) == directory
+    except ValueError:  # different drives / mix of absolute and relative
+        return False
 
 
 def content_diff(old_content: str, new_content: str,
@@ -74,7 +82,7 @@ def repo_diff_summary(repo_path: str,
         # Determine the repo counterpart path
         from pathlib import Path
         home = str(Path.home())
-        if config_path.startswith(home):
+        if _is_within(config_path, home):
             rel = os.path.relpath(config_path, home)
         else:
             rel = os.path.basename(config_path)
