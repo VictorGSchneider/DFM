@@ -68,6 +68,11 @@ def clone_repo(repo_name: str = "dotfiles") -> SyncStatus:
         )
 
     username = get_gh_username()
+    if not username:
+        return SyncStatus(
+            success=False,
+            message="Could not determine your GitHub username (gh api user failed).",
+        )
     local_path = os.path.join(str(Path.home()), ".dotfiles")
 
     if os.path.isdir(local_path):
@@ -120,7 +125,11 @@ def push_dotfiles(entries: list[DotfileEntry],
         commit_message = f"Update dotfiles via DFM ({os.uname().nodename})"
 
     try:
-        run_git(["add", "-A"], cwd=repo_path)
+        added = run_git(["add", "-A"], cwd=repo_path)
+        if added.returncode != 0:
+            return SyncStatus(success=False,
+                              message=f"git add failed: {added.stderr.strip()}",
+                              details=details)
 
         status = run_git(["status", "--porcelain"], cwd=repo_path)
         if not status.stdout.strip():
@@ -130,7 +139,12 @@ def push_dotfiles(entries: list[DotfileEntry],
                 details=details,
             )
 
-        run_git(["commit", "-m", commit_message], cwd=repo_path)
+        committed = run_git(["commit", "-m", commit_message], cwd=repo_path)
+        if committed.returncode != 0:
+            reason = (committed.stderr or committed.stdout).strip()
+            return SyncStatus(success=False,
+                              message=f"Commit failed: {reason}",
+                              details=details)
 
         push_result = run_git(["push", "-u", "origin", "HEAD"], cwd=repo_path,
                               timeout=60)
@@ -165,7 +179,8 @@ def _copy_entries_to_repo(entries: list[DotfileEntry], home: str,
         try:
             if entry.is_directory and os.path.isdir(src):
                 os.makedirs(dest, exist_ok=True)
-                shutil.copytree(src, dest, dirs_exist_ok=True)
+                shutil.copytree(src, dest, dirs_exist_ok=True,
+                                ignore_dangling_symlinks=True)
                 details.append(f"+ {rel}/")
             elif os.path.isfile(src):
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -241,33 +256,33 @@ def get_commit_history(limit: int = 20) -> list[dict]:
         return []
 
     try:
+        # ASCII separators: commit subjects and author names may contain any
+        # printable character (including "|"). --name-only avoids a git call per commit.
         result = run_git(
-            ["log", f"-{limit}", "--format=%H|%h|%s|%an|%cr|%ci"],
-            cwd=repo_path, timeout=10,
+            ["log", f"-{limit}", "--name-only",
+             "--format=%x1e%H%x1f%h%x1f%s%x1f%an%x1f%cr%x1f%ci"],
+            cwd=repo_path, timeout=15,
         )
         if result.returncode != 0:
             return []
 
         commits = []
-        for line in result.stdout.strip().splitlines():
-            parts = line.split("|", 5)
-            if len(parts) >= 5:
-                files_result = run_git(
-                    ["diff-tree", "--no-commit-id", "--name-only", "-r", parts[0]],
-                    cwd=repo_path, timeout=5,
-                )
-                files = (files_result.stdout.strip().splitlines()
-                         if files_result.returncode == 0 else [])
-
-                commits.append({
-                    "hash": parts[0],
-                    "short_hash": parts[1],
-                    "message": parts[2],
-                    "author": parts[3],
-                    "relative_date": parts[4],
-                    "date": parts[5] if len(parts) > 5 else "",
-                    "files_changed": files,
-                })
+        for record in result.stdout.split("\x1e"):
+            if not record.strip():
+                continue
+            header, _, names = record.partition("\n")
+            parts = header.split("\x1f")
+            if len(parts) < 6:
+                continue
+            commits.append({
+                "hash": parts[0],
+                "short_hash": parts[1],
+                "message": parts[2],
+                "author": parts[3],
+                "relative_date": parts[4],
+                "date": parts[5],
+                "files_changed": [n for n in names.splitlines() if n.strip()],
+            })
 
         return commits
     except subprocess.TimeoutExpired:

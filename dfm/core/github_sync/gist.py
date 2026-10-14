@@ -29,7 +29,8 @@ def upload_gist(file_path: str, description: str = "",
         cmd.append("--public")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30,
+                                errors="replace")
         if result.returncode == 0:
             return SyncStatus(
                 success=True,
@@ -47,22 +48,32 @@ def upload_gist(file_path: str, description: str = "",
 
 
 def list_gists() -> list[dict]:
-    """List the user's gists."""
+    """List the user's gists (`gh gist list` has no JSON output, so use the API)."""
     try:
         result = subprocess.run(
-            ["gh", "gist", "list", "--limit", "30", "--json",
-             "id,description,files,updatedAt,public"],
-            capture_output=True, text=True, timeout=15,
+            ["gh", "api", "gists?per_page=30"],
+            capture_output=True, text=True, timeout=15, errors="replace",
         )
         if result.returncode == 0:
-            return json.loads(result.stdout)
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+            return [
+                {
+                    "id": g.get("id", ""),
+                    "description": g.get("description") or "",
+                    "files": list((g.get("files") or {}).keys()),
+                    "updatedAt": g.get("updated_at", ""),
+                    "public": bool(g.get("public")),
+                }
+                for g in json.loads(result.stdout)
+            ]
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError,
+            TypeError, AttributeError):
         pass
     return []
 
 
-def import_gist(gist_id: str, target_path: str) -> SyncStatus:
-    """Download a gist and save to target path."""
+def import_gist(gist_id: str, target_path: str,
+                filename: str | None = None) -> SyncStatus:
+    """Download one file of a gist (the first, unless `filename`) to target path."""
     if not is_gh_authenticated():
         return SyncStatus(
             success=False,
@@ -70,39 +81,39 @@ def import_gist(gist_id: str, target_path: str) -> SyncStatus:
         )
 
     try:
-        result = subprocess.run(
-            ["gh", "gist", "view", gist_id, "--json", "files,description"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode != 0:
-            return SyncStatus(
-                success=False,
-                message=f"Failed to fetch gist: {result.stderr.strip()}",
+        if filename is None:
+            listing = subprocess.run(
+                ["gh", "gist", "view", gist_id, "--files"],
+                capture_output=True, text=True, timeout=15, errors="replace",
             )
+            if listing.returncode != 0:
+                return SyncStatus(
+                    success=False,
+                    message=f"Failed to fetch gist: {listing.stderr.strip()}",
+                )
+            names = [n for n in listing.stdout.splitlines() if n.strip()]
+            if not names:
+                return SyncStatus(success=False, message="Gist has no files")
+            filename = names[0]
 
-        data = json.loads(result.stdout)
-        files = data.get("files", [])
-        if not files:
-            return SyncStatus(success=False, message="Gist has no files")
-
-        filename = files[0].get("filename", "config")
-
+        # Bytes, not text: keep the file exactly as it was uploaded
         raw_result = subprocess.run(
-            ["gh", "gist", "view", gist_id, "--raw"],
-            capture_output=True, text=True, timeout=15,
+            ["gh", "gist", "view", gist_id, "--filename", filename, "--raw"],
+            capture_output=True, timeout=15,
         )
         if raw_result.returncode != 0:
+            err = raw_result.stderr.decode(errors="replace").strip()
             return SyncStatus(
                 success=False,
-                message=f"Failed to download gist content: {raw_result.stderr.strip()}",
+                message=f"Failed to download gist content: {err}",
             )
 
         if os.path.isfile(target_path):
             from dfm.core.backup import create_backup
             create_backup(target_path, reason="gist-import")
 
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        with open(target_path, "w") as f:
+        os.makedirs(os.path.dirname(os.path.abspath(target_path)), exist_ok=True)
+        with open(target_path, "wb") as f:
             f.write(raw_result.stdout)
 
         return SyncStatus(
@@ -112,5 +123,5 @@ def import_gist(gist_id: str, target_path: str) -> SyncStatus:
 
     except subprocess.TimeoutExpired:
         return SyncStatus(success=False, message="Timed out fetching gist.")
-    except (json.JSONDecodeError, KeyError) as e:
-        return SyncStatus(success=False, message=f"Failed to parse gist: {e}")
+    except OSError as e:
+        return SyncStatus(success=False, message=f"Failed to save {target_path}: {e}")
