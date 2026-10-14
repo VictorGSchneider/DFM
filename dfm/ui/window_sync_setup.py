@@ -5,20 +5,15 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 
-from dfm.core.github_sync import (
-    is_gh_available, is_gh_authenticated, init_repo, clone_repo,
-)
+from dfm.core.github_sync import init_repo, clone_repo
 
 
 def on_init_repo_clicked(section, _btn: Gtk.Button) -> None:
     """Handle create new repo."""
-    if not is_gh_available():
-        section._show_gh_missing_dialog()
-        return
-    if not is_gh_authenticated():
-        section._show_gh_auth_dialog()
-        return
+    section.require_auth(lambda: _confirm_init(section))
 
+
+def _confirm_init(section) -> None:
     confirm = Adw.AlertDialog()
     confirm.set_heading("Create Dotfiles Repository")
     confirm.set_body(
@@ -38,8 +33,18 @@ def _on_init_confirmed(dialog: Adw.AlertDialog, response: str, section) -> None:
     if response != "create":
         return
 
-    status = init_repo()
-    heading = "Repo Created" if status.success else "Creation Failed"
+    section.run_task(
+        "Creating the repository…", init_repo,
+        lambda status, error: _setup_done(
+            section, status, error, "Repo Created", "Creation Failed"),
+    )
+
+
+def _setup_done(section, status, error, ok_heading: str, fail_heading: str) -> None:
+    if error is not None:
+        section._alert(fail_heading, str(error))
+        return
+    heading = ok_heading if status.success else fail_heading
     body = status.message
     if status.url:
         body += f"\n\n{status.url}"
@@ -50,13 +55,10 @@ def _on_init_confirmed(dialog: Adw.AlertDialog, response: str, section) -> None:
 
 def on_clone_repo_clicked(section, _btn: Gtk.Button) -> None:
     """Handle clone existing repo."""
-    if not is_gh_available():
-        section._show_gh_missing_dialog()
-        return
-    if not is_gh_authenticated():
-        section._show_gh_auth_dialog()
-        return
+    section.require_auth(lambda: _confirm_clone(section))
 
+
+def _confirm_clone(section) -> None:
     confirm = Adw.AlertDialog()
     confirm.set_heading("Clone Dotfiles Repository")
     confirm.set_body(
@@ -76,11 +78,8 @@ def _on_clone_confirmed(dialog: Adw.AlertDialog, response: str, section) -> None
     if response != "clone":
         return
 
-    status = clone_repo()
-    heading = "Clone Complete" if status.success else "Clone Failed"
-    body = status.message
-    if status.url:
-        body += f"\n\n{status.url}"
-    section._alert(heading, body)
-    if status.success:
-        section.refresh_status()
+    section.run_task(
+        "Cloning the repository…", clone_repo,
+        lambda status, error: _setup_done(
+            section, status, error, "Clone Complete", "Clone Failed"),
+    )

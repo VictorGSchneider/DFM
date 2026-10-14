@@ -12,13 +12,15 @@ from dfm.core.scanner import DotfileEntry
 
 
 def export_dotfiles(entries: list[DotfileEntry], output_path: str,
-                    format: str = "tar.gz") -> str:
+                    format: str = "tar.gz", archive_name: str | None = None) -> str:
     """Export selected dotfiles to an archive.
 
     Args:
         entries: List of dotfile entries to export.
         output_path: Directory to save the archive.
         format: Archive format ('tar.gz' or 'directory').
+        archive_name: File name for the tar.gz (".tar.gz" is added if missing);
+            default is dotfiles_<host>_<timestamp>.tar.gz.
 
     Returns:
         Path to the created archive/directory.
@@ -34,7 +36,13 @@ def export_dotfiles(entries: list[DotfileEntry], output_path: str,
         return export_dir
 
     # tar.gz
-    archive_name = f"dotfiles_{hostname}_{timestamp}.tar.gz"
+    if archive_name:
+        archive_name = os.path.basename(archive_name)
+        if not archive_name.endswith(".tar.gz"):
+            archive_name += ".tar.gz"
+    else:
+        archive_name = f"dotfiles_{hostname}_{timestamp}.tar.gz"
+    os.makedirs(output_path, exist_ok=True)
     archive_path = os.path.join(output_path, archive_name)
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -60,6 +68,9 @@ def import_dotfiles(archive_path: str, target_home: str | None = None,
 
     Returns:
         List of dicts describing actions taken/planned.
+
+    Raises:
+        ValueError: `archive_path` is neither a directory nor a tar archive.
     """
     if target_home is None:
         target_home = str(Path.home())
@@ -91,6 +102,8 @@ def import_dotfiles(archive_path: str, target_home: str | None = None,
             actions = _plan_import(source_dir, manifest, target_home)
             if not dry_run:
                 _execute_import(actions)
+    else:
+        raise ValueError(f"Not a directory or tar archive: {archive_path}")
 
     return actions
 

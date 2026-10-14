@@ -108,6 +108,11 @@ def import_gist(gist_id: str, target_path: str,
                 message=f"Failed to download gist content: {err}",
             )
 
+        # A folder (or "dir/") means "save the gist file in there, under its own name"
+        target_path = os.path.expanduser(target_path)
+        if target_path.endswith(os.sep) or os.path.isdir(target_path):
+            target_path = os.path.join(target_path, os.path.basename(filename))
+
         if os.path.isfile(target_path):
             from dfm.core.backup import create_backup
             create_backup(target_path, reason="gist-import")

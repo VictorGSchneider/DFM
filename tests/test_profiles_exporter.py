@@ -108,6 +108,34 @@ class ExporterTests(Sandbox):
         self.assertEqual(len(saved), 1)
         self.assertEqual(Path(saved[0].backup_path).read_text(), "MY PRECIOUS CONFIG")
 
+    def test_export_uses_the_name_the_user_chose(self):
+        entry = self.entry(".bashrc")
+        out = Path(tempfile.mkdtemp()) / "new-dir"
+        archive = exporter.export_dotfiles([entry], str(out), archive_name="mine.tar.gz")
+        self.assertEqual(archive, str(out / "mine.tar.gz"))
+        self.assertTrue((out / "mine.tar.gz").is_file())
+
+    def test_export_adds_the_extension_when_missing(self):
+        entry = self.entry(".bashrc")
+        out = tempfile.mkdtemp()
+        archive = exporter.export_dotfiles([entry], out, archive_name="mydots")
+        self.assertEqual(os.path.basename(archive), "mydots.tar.gz")
+        self.assertTrue(os.path.isfile(archive))
+
+    def test_exported_archive_round_trips(self):
+        entry = self.entry(".bashrc", b"export A=1\n")
+        archive = exporter.export_dotfiles([entry], tempfile.mkdtemp(), archive_name="a.tar.gz")
+        target = Path(tempfile.mkdtemp())
+        actions = exporter.import_dotfiles(archive, str(target))
+        self.assertEqual([a["status"] for a in actions], ["done"])
+        self.assertEqual((target / ".bashrc").read_bytes(), b"export A=1\n")
+
+    def test_importing_something_that_is_not_an_archive_raises(self):
+        bogus = self.home / "notes.txt"
+        bogus.write_text("hello")
+        with self.assertRaises(ValueError):
+            exporter.import_dotfiles(str(bogus), str(self.home))
+
     def test_import_rejects_paths_that_escape_home(self):
         src = Path(tempfile.mkdtemp())
         (src / "evil").write_text("x")

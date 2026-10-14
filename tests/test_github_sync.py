@@ -12,8 +12,8 @@ from unittest import mock
 
 from dfm.core import backup
 from dfm.core.github_sync import (
-    get_commit_history, import_gist, list_gists, push_dotfiles, repo_config,
-    save_repo_path,
+    get_commit_history, import_gist, list_gists, pull_dotfiles, push_dotfiles,
+    repo_config, save_repo_path,
 )
 from dfm.core.scanner import DotfileEntry
 
@@ -124,6 +124,24 @@ class PushTests(Sandbox):
         self.assertTrue((Path(work) / ".config/nvim/init.lua").is_file())
 
 
+class PullTests(Sandbox):
+    def test_pull_follows_the_tracked_branch_not_the_remote_default(self):
+        """The remote's HEAD may name a different branch than the one we push to."""
+        work = self.make_repo()  # pushes `main`; the bare repo's HEAD says `master`
+        other = self.home / "other"
+        self.git("clone", "-q", "-b", "main", str(self.home / "remote.git"), str(other))
+        (other / ".bashrc").write_text("export A=2\n")
+        self.git("add", "-A", cwd=other)
+        self.git("commit", "-q", "-m", "remote change", cwd=other, identity=True)
+        self.git("push", "-q", cwd=other)
+
+        (self.home / ".bashrc").write_text("export A=1\n")
+        result = pull_dotfiles()
+        self.assertTrue(result.success, result.message)
+        self.assertEqual((self.home / ".bashrc").read_text(), "export A=2\n")
+        self.assertEqual(len(backup.get_backups(str(self.home / ".bashrc"))), 1)
+
+
 class HistoryTests(Sandbox):
     def test_pipes_in_a_commit_subject_do_not_shift_fields(self):
         work = self.make_repo()
@@ -152,6 +170,21 @@ class GistTests(Sandbox):
     def test_import_into_a_relative_path_works(self):
         os.chdir(self.home)
         self.assertTrue(import_gist("g1", "a.conf").success)
+
+    def test_a_directory_target_gets_the_gist_filename(self):
+        folder = self.home / ".config"
+        folder.mkdir()
+        result = import_gist("g1", str(folder) + os.sep)
+        self.assertTrue(result.success, result.message)
+        self.assertEqual((folder / "a.conf").read_text(), "AAA\n")
+        result = import_gist("g1", str(folder))  # existing directory, no slash
+        self.assertTrue(result.success, result.message)
+
+    def test_tilde_in_the_target_is_expanded(self):
+        result = import_gist("g1", "~/dots/a.conf")
+        self.assertTrue(result.success, result.message)
+        self.assertEqual((self.home / "dots" / "a.conf").read_text(), "AAA\n")
+        self.assertFalse(Path("~").exists())
 
     def test_list_gists_returns_the_users_gists(self):
         found = list_gists()

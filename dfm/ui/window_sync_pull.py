@@ -8,9 +8,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 
-from dfm.core.github_sync import (
-    is_gh_available, is_gh_authenticated, pull_dotfiles, get_repo_path,
-)
+from dfm.core.github_sync import pull_dotfiles, get_repo_path
 
 
 _SKIP_FILES = {"dfm_manifest.json", "README.md", "LICENSE", ".gitignore"}
@@ -18,13 +16,10 @@ _SKIP_FILES = {"dfm_manifest.json", "README.md", "LICENSE", ".gitignore"}
 
 def on_pull_clicked(section, _btn: Gtk.Button) -> None:
     """Handle pull: check prerequisites, show what will change, confirm."""
-    if not is_gh_available():
-        section._show_gh_missing_dialog()
-        return
-    if not is_gh_authenticated():
-        section._show_gh_auth_dialog()
-        return
+    section.require_auth(lambda: _after_auth(section))
 
+
+def _after_auth(section) -> None:
     repo_path = get_repo_path()
     if not repo_path:
         section._alert("No Repository",
@@ -103,7 +98,17 @@ def _on_pull_confirmed(dialog: Adw.AlertDialog, response: str, section) -> None:
     if response != "pull":
         return
 
-    status = pull_dotfiles()
+    section.run_task(
+        "Pulling from GitHub…",
+        pull_dotfiles,
+        lambda status, error: _pull_done(section, status, error),
+    )
+
+
+def _pull_done(section, status, error) -> None:
+    if error is not None:
+        section._alert("Pull Failed", str(error))
+        return
     heading = "Pull Complete" if status.success else "Pull Failed"
     body = status.message
     if status.details:

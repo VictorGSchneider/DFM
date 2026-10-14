@@ -11,6 +11,7 @@ from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 from dfm.core.distro import install_hint
 from dfm.core.scanner import DotfileEntry
 from dfm.core.exporter import export_dotfiles, import_dotfiles
+from dfm.ui.tasks import run_async
 from dfm.core.github_sync import (
     is_gh_available, is_gh_authenticated, upload_gist,
 )
@@ -64,12 +65,24 @@ class ImportExportHelper:
     def _on_import_confirmed(self, dialog, response, archive_path) -> None:
         if response != "import":
             return
-        actions = import_dotfiles(archive_path)
+        self._toast("Importing dotfiles…")
+        run_async(lambda: import_dotfiles(archive_path), self._on_import_done)
+
+    def _on_import_done(self, actions, error) -> None:
+        if error is not None:
+            if isinstance(error, ValueError):
+                message = "That file isn't a dotfiles archive."
+            else:
+                message = f"The archive couldn't be imported: {error}"
+            self.window._show_message("Import Failed", message)
+            return
         done = sum(1 for a in actions if a["status"] == "done")
         errors = sum(1 for a in actions if a["status"].startswith("error"))
-        toast = Adw.Toast.new(f"Imported {done} files ({errors} errors)")
-        self.window._toast_overlay.add_toast(toast)
+        self._toast(f"Imported {done} files ({errors} errors)")
         self.window._scan_and_populate()
+
+    def _toast(self, message: str) -> None:
+        self.window._toast_overlay.add_toast(Adw.Toast.new(message))
 
     def on_export_clicked(self, _btn) -> None:
         enabled = [e for e in self.window.dotfiles if e.enabled]
@@ -90,17 +103,23 @@ class ImportExportHelper:
             file = dialog.save_finish(result)
             if not file:
                 return
-            output_path = file.get_path()
-            if output_path.endswith(".tar.gz"):
-                output_dir = os.path.dirname(output_path)
-            else:
-                output_dir = output_path
-            archive = export_dotfiles(entries, output_dir)
-            toast = Adw.Toast.new(f"Exported to {archive}")
-            self.window._toast_overlay.add_toast(toast)
+            # Honour the file name the user typed, not just its folder
+            directory, name = os.path.split(file.get_path())
+            self._toast("Exporting dotfiles…")
+            run_async(
+                lambda: export_dotfiles(entries, directory, archive_name=name),
+                self._on_export_done,
+            )
         except GLib.Error as e:
             if e.code != 2:
                 print(f"DFM export dialog error: {e}", file=sys.stderr)
+
+
+    def _on_export_done(self, archive, error) -> None:
+        if error is not None:
+            self.window._show_message("Export Failed", f"Couldn't create the archive: {error}")
+            return
+        self._toast(f"Exported to {archive}")
 
 
 class GistSharer:

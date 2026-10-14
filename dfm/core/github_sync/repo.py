@@ -201,7 +201,7 @@ def pull_dotfiles() -> SyncStatus:
         )
 
     try:
-        pull_result = run_git(["pull", "origin", "HEAD"], cwd=repo_path, timeout=60)
+        pull_result = run_git(["pull"], cwd=repo_path, timeout=60)
         if pull_result.returncode != 0:
             return SyncStatus(
                 success=False,

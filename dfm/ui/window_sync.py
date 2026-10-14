@@ -11,7 +11,10 @@ from gi.repository import Gtk, Adw, GLib
 
 from dfm.ui.markup import esc
 from dfm.core.distro import install_hint
-from dfm.core.github_sync import get_repo_status, get_commit_history
+from dfm.core.github_sync import (
+    get_repo_status, get_commit_history, is_gh_available, is_gh_authenticated,
+)
+from dfm.ui.tasks import run_async
 from dfm.ui.window_sync_push import on_push_clicked
 from dfm.ui.window_sync_pull import on_pull_clicked
 from dfm.ui.window_sync_gist import on_import_gist_clicked
@@ -38,6 +41,8 @@ class SyncSection:
 
         self._status_group: Adw.PreferencesGroup | None = None
         self._history_group: Adw.PreferencesGroup | None = None
+        self._busy = False        # one GitHub operation at a time
+        self._refresh_gen = 0     # lets a newer refresh win over a slower older one
 
     # ── Public API ──────────────────────────────────────────────────
 
@@ -68,7 +73,6 @@ class SyncSection:
 
         self._status_group = Adw.PreferencesGroup()
         self._status_group.set_title("Status")
-        self._populate_status_group()
         box.append(self._status_group)
 
         box.append(self._build_actions_group())
@@ -76,28 +80,95 @@ class SyncSection:
         self._history_group = Adw.PreferencesGroup()
         self._history_group.set_title("Commit History")
         self._history_group.set_description("Recent commits in the dotfiles repo")
-        self._populate_history_group()
         box.append(self._history_group)
 
         box.append(self._build_setup_group())
 
+        self.refresh_status()
         return box
 
     def refresh_status(self) -> None:
-        """Refresh the status display and commit history."""
-        if self._status_group is not None:
-            self._clear_group(self._status_group)
-            self._populate_status_group()
-        if self._history_group is not None:
-            self._clear_group(self._history_group)
-            self._populate_history_group()
+        """Refresh the status display and commit history (without blocking the UI)."""
+        if self._status_group is None or self._history_group is None:
+            return
+        self._refresh_gen += 1
+        generation = self._refresh_gen
+
+        self._clear_group(self._status_group)
+        self._clear_group(self._history_group)
+        loading = Adw.ActionRow()
+        loading.set_title("Checking GitHub…")
+        spinner = Gtk.Spinner(spinning=True, valign=Gtk.Align.CENTER)
+        loading.add_suffix(spinner)
+        self._status_group.add(loading)
+
+        run_async(
+            lambda: (get_repo_status(), get_commit_history(limit=15)),
+            lambda result, error: self._apply_status(generation, result, error),
+        )
+
+    def _apply_status(self, generation: int, result, error) -> None:
+        if generation != self._refresh_gen:
+            return  # a newer refresh is on its way
+        self._clear_group(self._status_group)
+        self._clear_group(self._history_group)
+        if error is not None:
+            row = Adw.ActionRow()
+            row.set_title("Couldn't read the repository status")
+            row.set_subtitle(esc(str(error)))
+            self._status_group.add(row)
+            return
+        status, commits = result
+        self._fill_status_group(status)
+        self._fill_history_group(commits)
+
+    # ── Background work helpers (used by the push/pull/setup handlers) ──
+
+    def run_task(self, label: str, work, on_done) -> None:
+        """Run `work()` off the UI thread, then `on_done(result, error)` on it."""
+        if self._busy:
+            self.toast("Another GitHub operation is still running")
+            return
+        self._busy = True
+        self.toast(label)
+
+        def finished(result, error) -> None:
+            self._busy = False
+            on_done(result, error)
+
+        run_async(work, finished)
+
+    def require_auth(self, then) -> None:
+        """Call `then()` once gh is installed and logged in; explain otherwise."""
+        if not is_gh_available():
+            self._show_gh_missing_dialog()
+            return
+
+        def checked(authenticated, error) -> None:
+            if authenticated:
+                then()
+            else:
+                self._show_gh_auth_dialog()
+
+        self.run_task("Checking GitHub login…", is_gh_authenticated, checked)
+
+    def toast(self, message: str) -> None:
+        overlay = getattr(self._window, "_toast_overlay", None)
+        if overlay is not None:
+            toast = Adw.Toast.new(message)
+            toast.set_timeout(2)
+            overlay.add_toast(toast)
+
+    def _on_push_clicked(self, btn: Gtk.Button) -> None:
+        on_push_clicked(self, btn)
+
+    def _on_pull_clicked(self, btn: Gtk.Button) -> None:
+        on_pull_clicked(self, btn)
 
     # ── Status Group ────────────────────────────────────────────────
 
-    def _populate_status_group(self) -> None:
+    def _fill_status_group(self, status: dict) -> None:
         """Fill the status preference group with current info."""
-        status = get_repo_status()
-
         gh_row = Adw.ActionRow()
         gh_row.set_title("GitHub CLI")
         if not status["gh_available"]:
@@ -187,10 +258,8 @@ class SyncSection:
 
     # ── Commit History Group ────────────────────────────────────────
 
-    def _populate_history_group(self) -> None:
+    def _fill_history_group(self, commits: list[dict]) -> None:
         """Fill the commit history group with recent commits."""
-        commits = get_commit_history(limit=15)
-
         if not commits:
             empty_row = Adw.ActionRow()
             empty_row.set_title("No commits yet")
