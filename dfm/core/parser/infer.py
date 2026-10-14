@@ -6,13 +6,27 @@ from dfm.core.parser.types import (
 )
 
 
+_BOOLISH_KEY = ("enable", "disable", "use_", "is_", "has_", "show", "hide",
+                "allow", "no_", "smart", "auto")
+
+
+def _is_numeric_key(key_lower: str) -> bool:
+    if key_lower.startswith(_BOOLISH_KEY) or any(
+            part in key_lower for part in _BOOLISH_KEY[:2]):
+        return False
+    return any(s in key_lower for s in SLIDER_KEYS)
+
+
 def infer_field_type(key: str, value: str) -> FieldType:
     """Infer the best UI field type from a key-value pair."""
     val_lower = value.lower().strip()
     key_lower = key.lower().replace("-", "_").replace(".", "_")
 
     if val_lower in BOOL_TRUE or val_lower in BOOL_FALSE:
-        return FieldType.TOGGLE
+        # "0"/"1" next to a numeric-looking key (border_size, gaps_in, ...) is a
+        # number that happens to be 0 or 1, not an on/off switch
+        if not (val_lower in ("0", "1") and _is_numeric_key(key_lower)):
+            return FieldType.TOGGLE
 
     if COLOR_PATTERN.match(value.strip()):
         return FieldType.COLOR

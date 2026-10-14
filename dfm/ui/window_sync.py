@@ -9,6 +9,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, GLib
 
+from dfm.ui.markup import esc
 from dfm.core.distro import install_hint
 from dfm.core.github_sync import get_repo_status, get_commit_history
 from dfm.ui.window_sync_push import on_push_clicked
@@ -107,7 +108,7 @@ class SyncSection:
             gh_row.set_subtitle("Not authenticated — run 'gh auth login'")
             icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
         else:
-            gh_row.set_subtitle(f"Authenticated as {status['username']}")
+            gh_row.set_subtitle(f"Authenticated as {esc(status['username'])}")
             icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")
         icon.set_valign(Gtk.Align.CENTER)
         gh_row.add_suffix(icon)
@@ -118,15 +119,15 @@ class SyncSection:
         if status["configured"] and status.get("exists"):
             parts = []
             if status.get("path"):
-                parts.append(status["path"])
+                parts.append(esc(status["path"]))
             if status.get("branch"):
-                parts.append(f"branch: {status['branch']}")
+                parts.append(f"branch: {esc(status['branch'])}")
             if status.get("last_commit"):
-                parts.append(status["last_commit"])
+                parts.append(esc(status["last_commit"]))
             repo_row.set_subtitle(" · ".join(parts))
             icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")
         elif status["configured"]:
-            repo_row.set_subtitle(f"Configured but not found: {status['path']}")
+            repo_row.set_subtitle(f"Configured but not found: {esc(status['path'])}")
             icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
         else:
             repo_row.set_subtitle("Not configured — create or clone a repo")

@@ -10,10 +10,18 @@ import sys
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Gio, GLib
+from gi.repository import Gtk, Gio, GLib, Adw
 
 from dfm.core.backup import create_backup
 from dfm.core.parser import update_config_value
+from dfm.core.parser.colors import format_color
+from dfm.core.parser.toggles import toggle_value
+
+
+def _toast(builder, message: str) -> None:
+    overlay = getattr(builder._window, "_toast_overlay", None)
+    if overlay is not None:
+        overlay.add_toast(Adw.Toast.new(message))
 
 
 def update_monitor(builder, config_path: str) -> None:
@@ -34,7 +42,12 @@ def _debounced_save(builder, widget, new_val: str, prefix: str, delay: int = 500
 
     def _save():
         create_backup(str(config_path), "edit")
-        update_config_value(config_path, field, new_val)
+        if update_config_value(config_path, field, new_val):
+            # The widget keeps this field for later edits: track what's on disk
+            field.value = new_val
+        else:
+            _toast(builder, f"Couldn't save '{field.key}': its line changed or "
+                            "can't be edited here")
         update_monitor(builder, config_path)
         builder._debounce_sources.pop(key, None)
         return False
@@ -43,7 +56,7 @@ def _debounced_save(builder, widget, new_val: str, prefix: str, delay: int = 500
 
 
 def on_toggle_changed(builder, row, _pspec):
-    new_val = "true" if row.get_active() else "false"
+    new_val = toggle_value(row._field.value, row.get_active())
     _debounced_save(builder, row, new_val, "toggle", delay=300)
 
 
@@ -55,10 +68,9 @@ def on_scale_changed(builder, scale):
 
 def on_color_changed(builder, btn, _pspec):
     rgba = btn.get_rgba()
-    hex_color = "#{:02x}{:02x}{:02x}".format(
-        int(rgba.red * 255), int(rgba.green * 255), int(rgba.blue * 255),
-    )
-    _debounced_save(builder, btn, hex_color, "color")
+    new_color = format_color(btn._field.value, rgba.red, rgba.green,
+                             rgba.blue, rgba.alpha)
+    _debounced_save(builder, btn, new_color, "color")
 
 
 def on_spin_changed(builder, spin):

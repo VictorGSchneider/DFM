@@ -6,6 +6,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gdk, GLib
 
 from dfm.core.parser import ConfigField, FieldType, ParsedConfig, BOOL_TRUE
+from dfm.core.parser.colors import parse_color
 from dfm.core.scanner import DotfileEntry
 
 
@@ -117,9 +118,8 @@ def _slider_row(builder, field, parsed, entry, key, value, description):
 def _color_row(builder, field, parsed, entry, key, value, description):
     row = Adw.ActionRow(title=key, subtitle=description)
     rgba = Gdk.RGBA()
-    color_str = str(value) if value else "#000000"
-    if not rgba.parse(color_str):
-        rgba.parse("#000000")
+    parsed_color = parse_color(str(value)) if value else None
+    rgba.red, rgba.green, rgba.blue, rgba.alpha = parsed_color or (0.0, 0.0, 0.0, 1.0)
     color_dialog = Gtk.ColorDialog()
     color_btn = Gtk.ColorDialogButton(dialog=color_dialog, valign=Gtk.Align.CENTER)
     color_btn.set_rgba(rgba)

@@ -59,8 +59,8 @@ def _atomic_write(filepath: str, text: str) -> None:
 
 def update_config_value(filepath: str, field: ConfigField, new_value: str) -> bool:
     """Update a single value in a config file."""
-    if new_value == field.value:
-        return True
+    if "\n" in new_value or "\r" in new_value:
+        return False  # a value stays on its line, or line numbers stop matching
 
     try:
         content = _read_text(filepath)
@@ -81,6 +81,8 @@ def update_config_value(filepath: str, field: ConfigField, new_value: str) -> bo
         new_line = _rebuild_line(old_line, field, new_value, fmt)
     if new_line is None:
         return False
+    if new_line == old_line:
+        return True  # nothing to change; don't touch the file
 
     lines[idx] = new_line
 
@@ -179,7 +181,7 @@ def _rebuild_body(body: str, field: ConfigField, new_value: str, fmt: str) -> st
             return None
         token, tail = _split_value(rest, comments=(fmt == "toml"),
                                    terminator=(fmt == "generic"))
-        if fmt == "toml" and _bracket_open(token):
+        if fmt in ("toml", "generic") and _bracket_open(token):
             return None  # array/table spans several lines
         if fmt == "ini":
             return f"{indent}{key}{sep}{new_value}"

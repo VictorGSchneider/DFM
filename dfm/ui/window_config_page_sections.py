@@ -9,6 +9,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
+from dfm.ui.markup import esc
 from dfm.core.scanner import DotfileEntry
 from dfm.core.backup import get_backups, restore_backup
 from dfm.core.validator import validate_file
@@ -168,8 +169,8 @@ def build_deps(entry: DotfileEntry) -> Gtk.Widget | None:
 
     for dep in deps:
         row = Adw.ActionRow()
-        row.set_title(dep.display_name)
-        row.set_subtitle(dep.description)
+        row.set_title(esc(dep.display_name))
+        row.set_subtitle(esc(dep.description))
         if dep.installed:
             icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")
             icon.add_css_class("success")
@@ -184,7 +185,7 @@ def build_deps(entry: DotfileEntry) -> Gtk.Widget | None:
     if cmd:
         cmd_row = Adw.ActionRow()
         cmd_row.set_title("Install missing")
-        cmd_row.set_subtitle(cmd)
+        cmd_row.set_subtitle(esc(cmd))
         copy_btn = Gtk.Button(icon_name="edit-copy-symbolic",
                               valign=Gtk.Align.CENTER,
                               tooltip_text="Copy command")
@@ -332,7 +333,7 @@ def build_backup_section(builder, entry: DotfileEntry) -> Gtk.Widget:
             subtitle_parts.append(reason)
 
         row = Adw.ActionRow(title=backup.display_time,
-                            subtitle=" · ".join(subtitle_parts))
+                            subtitle=esc(" · ".join(subtitle_parts)))
 
         restore_btn = Gtk.Button(label="Restore", valign=Gtk.Align.CENTER)
         restore_btn.add_css_class("flat")

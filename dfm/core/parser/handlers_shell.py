@@ -3,6 +3,7 @@
 import os
 import re
 
+from dfm.core.parser.blocks import block_open, is_block_close
 from dfm.core.parser.types import ConfigField, FieldType
 from dfm.core.parser.infer import make_display_name
 
@@ -125,6 +126,7 @@ def parse_i3_like(content: str) -> list[ConfigField]:
     """Parse i3/sway/hyprland-like config files."""
     fields = []
     current_section = "General"
+    blocks: list[str] = []  # names of the `name {` blocks we are inside
     comment_buffer = ""
 
     for line_num, line in enumerate(content.splitlines(), 1):
@@ -155,9 +157,29 @@ def parse_i3_like(content: str) -> list[ConfigField]:
             comment_buffer = inner
             continue
 
+        name = block_open(stripped)
+        if name is not None:
+            blocks.append(name)
+            fields.append(ConfigField(
+                key=name, display_name=name, value="",
+                field_type=FieldType.COMMENT,
+                section=" > ".join([current_section, *blocks]),
+                line_number=line_num, original_line=line,
+            ))
+            comment_buffer = ""
+            continue
+
+        if is_block_close(stripped):
+            if blocks:
+                blocks.pop()
+            comment_buffer = ""
+            continue
+
         field_obj = _parse_i3_statement(stripped, line, line_num,
                                         current_section, comment_buffer)
         if field_obj is not None:
+            if blocks:
+                field_obj.section = " > ".join([field_obj.section, *blocks])
             fields.append(field_obj)
             comment_buffer = ""
 

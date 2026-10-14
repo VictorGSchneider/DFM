@@ -5,6 +5,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 
+from dfm.ui.markup import esc
 from dfm.core.scanner import DotfileEntry
 from dfm.core.conflicts import detect_conflicts
 from dfm.ui.window_sidebar import (
@@ -69,8 +70,8 @@ def _build_group(page, category: str, entries: list[DotfileEntry]) -> None:
     switch_rows = []
     for entry in sorted_entries:
         row = Adw.SwitchRow()
-        row.set_title(entry.display_name)
-        row.set_subtitle(entry.path)
+        row.set_title(esc(entry.display_name))
+        row.set_subtitle(esc(entry.path))
         row.set_icon_name(entry.icon_name)
         row.set_active(entry.enabled)
         row._dfm_entry = entry
@@ -132,8 +133,8 @@ def build_conflict_section(page) -> None:
 
     for conflict in conflicts:
         row = Adw.ActionRow()
-        row.set_title(conflict.description)
-        row.set_subtitle(", ".join(conflict.entries))
+        row.set_title(esc(conflict.description))
+        row.set_subtitle(esc(", ".join(conflict.entries)))
 
         icon_name, css_class = severity_map.get(
             conflict.severity, ("dialog-information-symbolic", "accent"),

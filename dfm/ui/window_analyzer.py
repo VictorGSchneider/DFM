@@ -7,6 +7,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gdk, Pango
 
+from dfm.ui.markup import esc
 from dfm.core.scanner import DotfileEntry
 from dfm.core.analyzer import (
     analyze_all, FullAnalysis, FileAnalysis, Issue, IssueSeverity,
@@ -156,8 +157,8 @@ class AnalyzerPage:
             }.get(conflict.severity, IssueSeverity.INFO)
 
             row = Adw.ActionRow()
-            row.set_title(conflict.key)
-            row.set_subtitle(conflict.description)
+            row.set_title(esc(conflict.key))
+            row.set_subtitle(esc(conflict.description))
 
             icon = Gtk.Image.new_from_icon_name(_SEV_ICON[sev])
             icon.add_css_class(_SEV_CSS[sev])
@@ -183,8 +184,8 @@ class AnalyzerPage:
 
         # Header row — file name + badge
         header_row = Adw.ActionRow()
-        header_row.set_title(fa.entry.display_name)
-        header_row.set_subtitle(str(fa.entry.path))
+        header_row.set_title(esc(fa.entry.display_name))
+        header_row.set_subtitle(esc(fa.entry.path))
 
         icon = Gtk.Image.new_from_icon_name(fa.entry.icon_name)
         icon.set_pixel_size(24)
@@ -231,7 +232,7 @@ class AnalyzerPage:
 
     def _build_issue_row(self, issue: Issue) -> Adw.ActionRow:
         row = Adw.ActionRow()
-        row.set_title(issue.title)
+        row.set_title(esc(issue.title))
 
         # Build subtitle with detail, line number, and fix hint
         parts = []
@@ -239,7 +240,7 @@ class AnalyzerPage:
             parts.append(issue.detail)
         if issue.fix_hint:
             parts.append(f"Fix: {issue.fix_hint}")
-        row.set_subtitle("\n".join(parts))
+        row.set_subtitle(esc("\n".join(parts)))
 
         # Severity icon
         icon = Gtk.Image.new_from_icon_name(_SEV_ICON[issue.severity])

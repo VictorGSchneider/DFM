@@ -5,6 +5,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Pango
 
+from dfm.ui.markup import esc
 from dfm.core.backup import get_backups, restore_backup, get_diff, BackupEntry
 from dfm.ui.window_dialogs._common import (
     format_size, make_dialog, present_dialog,
@@ -103,7 +104,7 @@ class BackupHistoryDialog(StatusMixin):
         row = Adw.ActionRow()
         row.set_title(backup.display_time)
         row.set_subtitle(
-            f"{format_size(backup.size)} | {backup.reason} | {backup.relative_age}"
+            f"{format_size(backup.size)} | {esc(backup.reason)} | {backup.relative_age}"
         )
 
         diff_btn = Gtk.Button(label="View Diff")

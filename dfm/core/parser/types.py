@@ -51,7 +51,10 @@ class ParsedConfig:
 
 BOOL_TRUE = {"true", "yes", "on", "1", "enabled", "enable"}
 BOOL_FALSE = {"false", "no", "off", "0", "disabled", "disable"}
-COLOR_PATTERN = re.compile(r"^#([0-9a-fA-F]{3,8})$|^rgb[a]?\(.*\)$")
+# A single colour only: a gradient like "rgba(a) rgba(b) 45deg" is not one
+COLOR_PATTERN = re.compile(
+    r"^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$|^rgba?\([^()]*\)$"
+)
 PATH_PATTERN = re.compile(r"^[~/][\w/.~\-]+$")
 FONT_PATTERN = re.compile(r"^[\w\s]+ \d+(\.\d+)?$|font|typeface", re.IGNORECASE)
 KEYBIND_KEYWORDS = {"bindsym", "bind", "keybind", "shortcut", "hotkey",

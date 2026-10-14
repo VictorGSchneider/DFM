@@ -5,6 +5,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gdk
 
+from dfm.ui.markup import esc
 from dfm.core.profiles import (
     list_profiles, save_profile, load_profile,
     delete_profile, export_profile_json,
@@ -115,10 +116,10 @@ class ProfilesDialog(StatusMixin):
 
     def _build_profile_row(self, profile) -> Adw.ActionRow:
         row = Adw.ActionRow()
-        row.set_title(profile.name)
+        row.set_title(esc(profile.name))
         subtitle_parts = []
         if profile.description:
-            subtitle_parts.append(profile.description)
+            subtitle_parts.append(esc(profile.description))
         subtitle_parts.append(
             f"{profile.dotfile_count} dotfiles | {profile.display_time}"
         )
