@@ -370,11 +370,15 @@ def _on_restore_backup(btn):
 def _on_restore_confirmed(dialog, response, backup, entry, builder):
     if response != "restore":
         return
-    restore_backup(backup)
+    window = builder._window
+    restored = restore_backup(backup)
     config_path = entry.get_config_path() or entry.path
-    monitor = getattr(builder._window, "_monitor", None)
+    monitor = getattr(window, "_monitor", None)
     if monitor is not None:
         monitor.update_state(str(config_path))
-    toast = Adw.Toast.new(f"Restored backup for {entry.display_name}")
-    if hasattr(builder._window, "_toast_overlay"):
-        builder._window._toast_overlay.add_toast(toast)
+    message = (f"Restored backup for {entry.display_name}" if restored
+               else f"Couldn't restore {entry.display_name}")
+    if hasattr(window, "_toast_overlay"):
+        window._toast_overlay.add_toast(Adw.Toast.new(message))
+    if restored and hasattr(window, "_scan_and_populate"):
+        window._scan_and_populate()  # show the restored values (and the new backup)

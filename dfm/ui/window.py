@@ -170,6 +170,8 @@ class DfmWindow(Adw.ApplicationWindow):
     def _scan_and_populate(self) -> None:
         """Scan for dotfiles and populate all UI."""
         previous = self.dotfiles
+        viewing = self.content_stack.get_visible_child_name()
+        current = self.current_entry
         self.dotfiles = scan_dotfiles()
         carry_over_enabled(self.dotfiles, previous)
 
@@ -197,6 +199,16 @@ class DfmWindow(Adw.ApplicationWindow):
 
         self._sidebar.populate(self.dotfiles)
         self._monitor.track_entries(self.dotfiles)
+        self._restore_view(viewing, current)
+
+    def _restore_view(self, viewing: str | None, current: DotfileEntry | None) -> None:
+        """Stay on the page the user was looking at after the pages were rebuilt."""
+        if viewing == "analyzer":
+            self._on_analyzer_selected()
+        elif current is not None:
+            same = next((e for e in self.dotfiles
+                         if (e.name, e.path) == (current.name, current.path)), None)
+            self._on_entry_selected(same)
 
     def _build_all_dotfiles_combined(self) -> Gtk.Widget:
         """Build the All Dotfiles page with sync section embedded."""
