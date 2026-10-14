@@ -9,6 +9,7 @@ from dfm.core.parser.types import (
 )
 from dfm.core.parser.detect import detect_format as _detect_format
 from dfm.core.parser.infer import infer_field_type, make_display_name
+from dfm.core.parser.locate import LOCATORS
 from dfm.core.parser.handlers import (
     parse_ini,
     parse_toml,
@@ -45,8 +46,18 @@ def parse_config(filepath: str) -> ParsedConfig:
     }
     fields = handlers.get(file_format, parse_generic)(content)
 
-    for i, f in enumerate(fields):
-        f.line_number = f.line_number or i + 1
+    # Structured parsers see decoded data, not lines: find where each key lives.
+    # A key that can't be located keeps line 0 and is never written back.
+    if file_format in LOCATORS and any(not f.line_number for f in fields):
+        lines = content.splitlines()
+        located = LOCATORS[file_format](content)
+        for f in fields:
+            if not f.line_number:
+                f.line_number = located.get(f.key, 0)
+                if f.line_number:
+                    f.original_line = lines[f.line_number - 1]
+
+    for f in fields:
         if f.field_type == FieldType.TEXT:
             f.field_type = infer_field_type(f.key, f.value)
 

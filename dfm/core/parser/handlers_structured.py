@@ -146,7 +146,7 @@ def _flatten_json(data, fields: list[ConfigField], prefix: str,
                 fields.append(ConfigField(
                     key=full_key,
                     display_name=make_display_name(key),
-                    value=str(value),
+                    value="null" if value is None else str(value),
                     field_type=FieldType.TEXT,
                     section=section,
                 ))
