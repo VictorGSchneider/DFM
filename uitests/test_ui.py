@@ -32,7 +32,8 @@ def _toolkit_problem() -> str | None:
 PROBLEM = _toolkit_problem()
 
 # GTK noise that comes from the environment, not from DFM
-_IGNORED = ("dbus-launch", "Unable to acquire session bus", "Failed to connect to the accessibility bus")
+_IGNORED = ("dbus-launch", "Unable to acquire session bus", "Failed to connect to the accessibility bus",
+            "Unable to acquire the address of the accessibility bus")
 
 
 def _run(script: str, timeout: int = 120) -> subprocess.CompletedProcess:
