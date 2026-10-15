@@ -33,7 +33,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "DFM ${GITHUB_REF_NAME#v}" \
-            --notes-file notes.md \
-            --verify-tag
+          # Idempotent: a release made by hand (or by an earlier run) is
+          # updated with the CHANGELOG notes instead of failing with a 422.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists, updating title and notes"
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "DFM ${GITHUB_REF_NAME#v}" \
+              --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "DFM ${GITHUB_REF_NAME#v}" \
+              --notes-file notes.md \
+              --verify-tag
+          fi
