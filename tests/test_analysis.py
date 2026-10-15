@@ -77,6 +77,20 @@ class DuplicateKeyTests(TmpHome):
                 "env = A,1\nenv = B,2\n")
         self.assertEqual(self.dupes(".config/hypr/hyprland.conf", hypr), [])
 
+    def test_same_key_in_different_braced_blocks_is_not_a_duplicate(self):
+        rofi = ('window {\n    background-color: #000;\n    border-radius: 4px;\n}\n'
+                'inputbar {\n    background-color: #111;\n    border-radius: 2px;\n}\n')
+        self.assertEqual(self.dupes(".config/rofi/config.rasi", rofi), [])
+        hypr = ("decoration {\n    blur {\n        size = 3\n    }\n"
+                "    shadow {\n        size = 4\n    }\n}\n"
+                "general {\n    size = 1\n}\n")
+        self.assertEqual(self.dupes(".config/hypr/hyprland.conf", hypr), [])
+
+    def test_duplicate_inside_one_braced_block_is_reported(self):
+        found = self.dupes(".config/rofi/config.rasi",
+                           "window {\n    color: #000;\n    color: #111;\n}\n")
+        self.assertEqual(len(found), 1)
+
     def test_shell_branches_are_not_duplicates(self):
         content = 'if [ -n "$X" ]; then\n  export EDITOR=vim\nelse\n  export EDITOR=nano\nfi\n'
         self.assertEqual(self.dupes(".bashrc", content), [])
@@ -132,6 +146,17 @@ class ConflictTests(TmpHome):
         self.assertIn("alias:ll", found)
         self.assertIn("vim", found["EDITOR"].description)
         self.assertIn("ls -la", found["alias:ll"].description)
+
+    def test_redefining_inside_one_file_is_not_a_cross_file_conflict(self):
+        found = self.conflicts("export EDITOR=vim\nexport EDITOR=nvim\nalias ll='a'\nalias ll='b'\n",
+                               "export EDITOR=nvim\nalias ll='b'\n")
+        self.assertEqual(found, {})  # the last definition in each file is what counts
+
+    def test_each_file_is_listed_once_and_with_its_effective_value(self):
+        found = self.conflicts("export EDITOR=vim\nexport EDITOR=nvim\n", "export EDITOR=nano\n")
+        self.assertEqual(found["EDITOR"].entries, [".bashrc", ".zshrc"])
+        self.assertIn(".bashrc=nvim", found["EDITOR"].description)
+        self.assertNotIn(".bashrc=vim", found["EDITOR"].description)
 
     def test_unreadable_encoding_is_skipped(self):
         found = self.conflicts(b"# caf\xe9\nexport A=1\n", "export A=2\n")

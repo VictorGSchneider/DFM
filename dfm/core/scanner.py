@@ -267,7 +267,7 @@ def _get_icon_for_dotfile(filename: str) -> str:
         ".vimrc": "text-editor-symbolic",
         ".gvimrc": "text-editor-symbolic",
         ".tmux.conf": "utilities-terminal-symbolic",
-        ".gitconfig": "git-symbolic",
+        ".gitconfig": "text-x-generic-symbolic",
         ".Xresources": "preferences-desktop-display-symbolic",
         ".xinitrc": "preferences-desktop-display-symbolic",
     }
@@ -293,11 +293,11 @@ def _get_icon_for_config(dirname: str) -> str:
         "rofi": "system-search-symbolic",
         "dunst": "preferences-system-notifications-symbolic",
         "mako": "preferences-system-notifications-symbolic",
-        "mpv": "multimedia-video-player-symbolic",
+        "mpv": "video-x-generic-symbolic",
         "pipewire": "audio-volume-high-symbolic",
         "pulse": "audio-volume-high-symbolic",
         "fontconfig": "preferences-desktop-font-symbolic",
-        "gtk-3.0": "preferences-desktop-theme-symbolic",
-        "gtk-4.0": "preferences-desktop-theme-symbolic",
+        "gtk-3.0": "preferences-desktop-appearance-symbolic",
+        "gtk-4.0": "preferences-desktop-appearance-symbolic",
     }
     return icons.get(dirname, "application-x-executable-symbolic")
