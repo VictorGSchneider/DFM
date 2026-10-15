@@ -8,6 +8,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib
 
 from dfm.core.scanner import scan_dotfiles, carry_over_enabled, DotfileEntry
+from dfm.core.distro import forget_installed_cache
 from dfm.core.state import apply_saved_enabled, remember_enabled
 from dfm.core.monitor import DotfileMonitor
 from dfm.ui.window_sidebar import SidebarManager
@@ -51,6 +52,9 @@ class DfmWindow(Adw.ApplicationWindow):
         )
         self._analyzer_page = AnalyzerPage(
             on_navigate_to_entry=self._on_entry_selected,
+            on_install_started=self._on_install_started,
+            on_install_finished=self._on_install_finished,
+            on_message=self._toast,
         )
         self._io = ImportExportHelper(self)
         self._gist_sharer = GistSharer(self)
@@ -239,6 +243,23 @@ class DfmWindow(Adw.ApplicationWindow):
             stack_name = getattr(entry, '_stack_name', entry.name)
             self.content_stack.set_visible_child_name(stack_name)
             self.current_entry = entry
+
+    def _toast(self, message: str) -> None:
+        self._toast_overlay.add_toast(Adw.Toast.new(message))
+
+    def _on_install_started(self) -> None:
+        self._toast("Terminal opened. DFM will rescan by itself when the install finishes.")
+
+    def _on_install_finished(self, status: str) -> None:
+        """The install in the terminal ended: forget stale answers and rescan."""
+        forget_installed_cache()  # "is it installed?" answers are cached
+        self._scan_and_populate()
+        if status == "0":
+            self._toast("Install finished. Dotfiles rescanned.")
+        elif status == "aborted":
+            self._toast("Install interrupted. Dotfiles rescanned.")
+        else:
+            self._toast(f"Install failed (exit code {status}). Dotfiles rescanned.")
 
     def _on_analyzer_selected(self) -> None:
         """Show the analyzer page."""

@@ -80,6 +80,15 @@ class FullAnalysis:
         })
 
     @property
+    def missing_packages(self) -> list[str]:
+        """Canonical ids of the required packages that aren't installed."""
+        return sorted({
+            dep.package
+            for a in self.file_analyses for dep in a.deps
+            if not dep.installed and not dep.optional
+        })
+
+    @property
     def total_warnings(self) -> int:
         return sum(a.warning_count for a in self.file_analyses)
 

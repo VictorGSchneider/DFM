@@ -244,6 +244,18 @@ separator {
     border: 1px solid alpha(@stoa_terracotta, 0.7);
 }
 
+.analyzer-card-button {
+    padding: 0;
+    min-height: 0;
+    min-width: 0;
+    border-radius: 8px;
+    background: none;
+}
+
+.analyzer-card-button:hover .analyzer-card-alert {
+    background-color: alpha(@stoa_terracotta, 0.28);
+}
+
 .analyzer-card-clear {
     border: 1px solid alpha(@stoa_olive, 0.35);
 }

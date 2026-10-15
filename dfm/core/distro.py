@@ -346,6 +346,11 @@ def _pkgdb_says_installed(canonical: str) -> bool:
 _installed_cache: dict[str, bool] = {}
 
 
+def forget_installed_cache() -> None:
+    """Drop cached answers (call after installing packages)."""
+    _installed_cache.clear()
+
+
 def is_installed(canonical: str) -> bool:
     """Whether a canonical package is present on this system.
 

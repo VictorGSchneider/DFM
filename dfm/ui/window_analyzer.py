@@ -1,14 +1,19 @@
 """Analyzer & Debugger page — visual diagnostics for all dotfiles."""
 
 import os
+import shutil
+import tempfile
+import time
 
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gdk, Pango
+from gi.repository import Gtk, Adw, Gdk, GLib, Pango
 
 from dfm.ui.markup import esc
+from dfm.core.distro import install_command
 from dfm.core.scanner import DotfileEntry
+from dfm.core.terminal import open_terminal
 from dfm.core.analyzer import (
     analyze_all, FullAnalysis, FileAnalysis, Issue, IssueSeverity,
 )
@@ -43,8 +48,12 @@ _CAT_LABELS = {
 class AnalyzerPage:
     """Builds the Analyzer & Debugger page."""
 
-    def __init__(self, on_navigate_to_entry=None):
+    def __init__(self, on_navigate_to_entry=None, on_install_started=None,
+                 on_install_finished=None, on_message=None):
         self._on_navigate_to_entry = on_navigate_to_entry
+        self._on_install_started = on_install_started    # a terminal was opened
+        self._on_install_finished = on_install_finished  # (status: str) it ended
+        self._on_message = on_message                    # show a short notice
         self._content_box: Gtk.Box | None = None
         self._analysis: FullAnalysis | None = None
 
@@ -130,8 +139,8 @@ class AnalyzerPage:
             (str(total), "Files scanned", "analyzer-stat", None),
             (str(len(missing)), "Missing deps",
              "analyzer-error" if missing else "analyzer-ok",
-             "Not installed: " + ", ".join(missing) if missing
-             else "All required packages are installed"),
+             "Not installed: " + ", ".join(missing) + "\n\nClick to install them"
+             if missing else "All required packages are installed"),
             (str(analysis.config_errors), "Errors", "analyzer-error", None),
             (str(analysis.total_warnings), "Warnings", "analyzer-warning", None),
             (str(analysis.healthy_count), "Healthy", "analyzer-ok", None),
@@ -143,7 +152,14 @@ class AnalyzerPage:
             if label == "Missing deps":
                 card.add_css_class("analyzer-card-alert" if missing
                                    else "analyzer-card-clear")
-            if tooltip:
+            shown: Gtk.Widget = card
+            if label == "Missing deps" and missing:
+                # A button, so it's reachable by keyboard and shows a hover state
+                shown = Gtk.Button(child=card, tooltip_text=tooltip)
+                shown.add_css_class("flat")
+                shown.add_css_class("analyzer-card-button")
+                shown.connect("clicked", self._on_install_clicked, analysis)
+            elif tooltip:
                 card.set_tooltip_text(tooltip)
 
             val_label = Gtk.Label(label=value)
@@ -156,9 +172,104 @@ class AnalyzerPage:
             desc_label.add_css_class("caption")
             card.append(desc_label)
 
-            box.append(card)
+            box.append(shown)
 
         return box
+
+    # ── Installing missing packages ──────────────────────────────────
+
+    def _on_install_clicked(self, button: Gtk.Button, analysis: FullAnalysis) -> None:
+        names = analysis.missing_dependencies
+        command = install_command(analysis.missing_packages)
+        listing = "\n".join(f"  •  {n}" for n in names)
+
+        dialog = Adw.AlertDialog()
+        dialog.add_response("cancel", "Cancel")
+        dialog.set_close_response("cancel")
+        if command:
+            dialog.set_heading("Install missing packages?")
+            dialog.set_body(
+                "Your dotfiles need these packages, which aren't installed:\n\n"
+                f"{listing}\n\n"
+                f"A terminal will open and run:\n    {command}\n\n"
+                "You'll type your password in that terminal, not here."
+            )
+            dialog.add_response("copy", "Copy Command")
+            dialog.add_response("install", "Open Terminal & Install")
+            dialog.set_response_appearance("install", Adw.ResponseAppearance.SUGGESTED)
+            dialog.set_default_response("install")
+        else:
+            dialog.set_heading("Install missing packages")
+            dialog.set_body(
+                "DFM doesn't recognise this system's package manager, so it can't "
+                "build an install command. Install these with your package "
+                f"manager:\n\n{listing}"
+            )
+            command = " ".join(analysis.missing_packages)
+            dialog.add_response("copy", "Copy Package Names")
+        dialog.connect("response", self._on_install_response, command)
+        dialog.present(button)
+
+    def _on_install_response(self, dialog, response: str, command: str) -> None:
+        if response == "copy":
+            self._copy(command)
+            self._say("Copied to the clipboard")
+        elif response == "install":
+            directory = tempfile.mkdtemp(prefix="dfm-install-")
+            done_file = os.path.join(directory, "status")
+            if open_terminal(command, done_file):
+                self._watch_install(done_file, directory)
+                if self._on_install_started:
+                    self._on_install_started()
+                return
+            shutil.rmtree(directory, ignore_errors=True)
+            # No terminal emulator found: hand over the command instead
+            self._copy(command)
+            alert = Adw.AlertDialog()
+            alert.set_heading("No terminal found")
+            alert.set_body(
+                "DFM couldn't find a terminal emulator to open. The command was "
+                f"copied to your clipboard — paste it in any terminal:\n\n    {command}"
+            )
+            alert.add_response("ok", "OK")
+            alert.present(self._content_box)
+
+    def _watch_install(self, done_file: str, directory: str) -> None:
+        """Tell the window when the terminal's install ends (it writes `done_file`).
+
+        Watching a file instead of the terminal process works for emulators
+        whose launcher exits immediately, and fires when the install ends, not
+        when the user eventually closes the window.
+        """
+        started = time.monotonic()
+
+        def poll() -> bool:
+            if os.path.exists(done_file):
+                try:
+                    with open(done_file) as f:
+                        status = f.read().strip() or "aborted"
+                except OSError:
+                    status = "aborted"
+                shutil.rmtree(directory, ignore_errors=True)
+                if self._on_install_finished:
+                    self._on_install_finished(status)
+                return GLib.SOURCE_REMOVE
+            if time.monotonic() - started > 3 * 3600:  # nobody is coming back
+                shutil.rmtree(directory, ignore_errors=True)
+                return GLib.SOURCE_REMOVE
+            return GLib.SOURCE_CONTINUE
+
+        GLib.timeout_add_seconds(1, poll)
+
+    @staticmethod
+    def _copy(text: str) -> None:
+        display = Gdk.Display.get_default()
+        if display is not None:
+            display.get_clipboard().set(text)
+
+    def _say(self, message: str) -> None:
+        if self._on_message:
+            self._on_message(message)
 
     # ── Conflicts ────────────────────────────────────────────────────
 
