@@ -1,14 +1,19 @@
 """Analyzer & Debugger page — visual diagnostics for all dotfiles."""
 
 import os
+import shutil
+import tempfile
+import time
 
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gdk, Pango
+from gi.repository import Gtk, Adw, Gdk, GLib, Pango
 
 from dfm.ui.markup import esc
+from dfm.core.distro import install_command
 from dfm.core.scanner import DotfileEntry
+from dfm.core.terminal import open_terminal
 from dfm.core.analyzer import (
     analyze_all, FullAnalysis, FileAnalysis, Issue, IssueSeverity,
 )
@@ -43,8 +48,12 @@ _CAT_LABELS = {
 class AnalyzerPage:
     """Builds the Analyzer & Debugger page."""
 
-    def __init__(self, on_navigate_to_entry=None):
+    def __init__(self, on_navigate_to_entry=None, on_install_started=None,
+                 on_install_finished=None, on_message=None):
         self._on_navigate_to_entry = on_navigate_to_entry
+        self._on_install_started = on_install_started    # a terminal was opened
+        self._on_install_finished = on_install_finished  # (status: str) it ended
+        self._on_message = on_message                    # show a short notice
         self._content_box: Gtk.Box | None = None
         self._analysis: FullAnalysis | None = None
 
@@ -79,6 +88,10 @@ class AnalyzerPage:
 
         # Summary cards
         self._content_box.append(self._build_summary(self._analysis))
+
+        # Missing packages come first: nothing else matters without them
+        if self._analysis.missing_packages:
+            self._content_box.append(self._build_missing_deps(self._analysis))
 
         # Conflicts section
         if self._analysis.conflicts:
@@ -115,21 +128,36 @@ class AnalyzerPage:
     # ── Summary ──────────────────────────────────────────────────────
 
     def _build_summary(self, analysis: FullAnalysis) -> Gtk.Widget:
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        # Wraps onto a second line in a narrow window instead of overflowing
+        box = Gtk.FlowBox(
+            selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
+            min_children_per_line=1, max_children_per_line=5,
+            column_spacing=10, row_spacing=10, halign=Gtk.Align.START,
+        )
         box.set_margin_top(8)
-        box.set_halign(Gtk.Align.START)
 
+        missing = analysis.missing_dependencies
         total = len(analysis.file_analyses)
+        # Ordered by how much they block: no package = the app can't run at all
         cards = [
-            (str(total), "Files scanned", "analyzer-stat"),
-            (str(analysis.total_errors), "Errors", "analyzer-error"),
-            (str(analysis.total_warnings), "Warnings", "analyzer-warning"),
-            (str(analysis.healthy_count), "Healthy", "analyzer-ok"),
+            (str(total), "Files scanned", "analyzer-stat", None),
+            (str(len(missing)), "Missing deps",
+             "analyzer-error" if missing else "analyzer-ok",
+             "Not installed: " + ", ".join(missing)
+             if missing else "All required packages are installed"),
+            (str(analysis.config_errors), "Errors", "analyzer-error", None),
+            (str(analysis.total_warnings), "Warnings", "analyzer-warning", None),
+            (str(analysis.healthy_count), "Healthy", "analyzer-ok", None),
         ]
 
-        for value, label, css in cards:
+        for value, label, css, tooltip in cards:
             card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             card.add_css_class("analyzer-card")
+            if label == "Missing deps":
+                card.add_css_class("analyzer-card-alert" if missing
+                                   else "analyzer-card-clear")
+            if tooltip:
+                card.set_tooltip_text(tooltip)
 
             val_label = Gtk.Label(label=value)
             val_label.add_css_class("analyzer-card-value")
@@ -144,6 +172,134 @@ class AnalyzerPage:
             box.append(card)
 
         return box
+
+    # ── Missing dependencies ─────────────────────────────────────────
+
+    def _build_missing_deps(self, analysis: FullAnalysis) -> Gtk.Widget:
+        """Everything needed to fix missing packages, in one box: what, how, go."""
+        count = len(analysis.missing_packages)
+        command = install_command(analysis.missing_packages)
+
+        group = Adw.PreferencesGroup(title="Missing Dependencies")
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        box.add_css_class("card")
+        box.add_css_class("missing-deps")
+
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        icon = Gtk.Image.new_from_icon_name(_SEV_ICON[IssueSeverity.ERROR])
+        icon.add_css_class(_SEV_CSS[IssueSeverity.ERROR])
+        header.append(icon)
+        title = Gtk.Label(
+            label=f"{count} required package{'s' if count != 1 else ''} not installed",
+            xalign=0, hexpand=True,
+        )
+        title.add_css_class("heading")
+        header.append(title)
+        box.append(header)
+
+        packages = Gtk.Label(label=", ".join(analysis.missing_dependencies),
+                             xalign=0, wrap=True, selectable=True)
+        packages.add_css_class("dim-label")
+        box.append(packages)
+
+        # The command, in a plain terminal-looking box (or the names, if we can't
+        # build a command because the package manager isn't recognised)
+        to_copy = command or " ".join(analysis.missing_packages)
+        terminal_box = Gtk.Box()
+        terminal_box.add_css_class("terminal-box")
+        terminal_text = Gtk.Label(label=to_copy, xalign=0, wrap=True, selectable=True,
+                                  wrap_mode=Pango.WrapMode.WORD_CHAR, hexpand=True)
+        terminal_text.add_css_class("monospace")
+        terminal_box.append(terminal_text)
+        box.append(terminal_box)
+
+        notice = Gtk.Label(
+            label=("A terminal will open and run this command. "
+                   "You'll type your password there, not here."
+                   if command else
+                   "DFM doesn't recognise this system's package manager. "
+                   "Install these packages with yours."),
+            xalign=0, wrap=True,
+        )
+        notice.add_css_class("dim-label")
+        notice.add_css_class("caption")
+        box.append(notice)
+
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+                          halign=Gtk.Align.END)
+        copy_btn = Gtk.Button(label="Copy Command" if command else "Copy Package Names")
+        copy_btn.connect("clicked", lambda _b: (self._copy(to_copy),
+                                                self._say("Copied to the clipboard")))
+        buttons.append(copy_btn)
+        if command:
+            install_btn = Gtk.Button(label="Open Terminal & Install")
+            install_btn.add_css_class("suggested-action")
+            install_btn.connect("clicked", lambda _b: self._run_install(command))
+            buttons.append(install_btn)
+        box.append(buttons)
+
+        group.add(box)
+        return group
+
+    # ── Installing missing packages ──────────────────────────────────
+
+    def _run_install(self, command: str) -> None:
+        """Open a terminal running `command`; the window rescans when it ends."""
+        directory = tempfile.mkdtemp(prefix="dfm-install-")
+        done_file = os.path.join(directory, "status")
+        if open_terminal(command, done_file):
+            self._watch_install(done_file, directory)
+            if self._on_install_started:
+                self._on_install_started()
+            return
+        shutil.rmtree(directory, ignore_errors=True)
+        # No terminal emulator found: hand over the command instead
+        self._copy(command)
+        alert = Adw.AlertDialog()
+        alert.set_heading("No terminal found")
+        alert.set_body(
+            "DFM couldn't find a terminal emulator to open. The command was "
+            f"copied to your clipboard — paste it in any terminal:\n\n    {command}"
+        )
+        alert.add_response("ok", "OK")
+        alert.present(self._content_box)
+
+    def _watch_install(self, done_file: str, directory: str) -> None:
+        """Tell the window when the terminal's install ends (it writes `done_file`).
+
+        Watching a file instead of the terminal process works for emulators
+        whose launcher exits immediately, and fires when the install ends, not
+        when the user eventually closes the window.
+        """
+        started = time.monotonic()
+
+        def poll() -> bool:
+            if os.path.exists(done_file):
+                try:
+                    with open(done_file) as f:
+                        status = f.read().strip() or "aborted"
+                except OSError:
+                    status = "aborted"
+                shutil.rmtree(directory, ignore_errors=True)
+                if self._on_install_finished:
+                    self._on_install_finished(status)
+                return GLib.SOURCE_REMOVE
+            if time.monotonic() - started > 3 * 3600:  # nobody is coming back
+                shutil.rmtree(directory, ignore_errors=True)
+                return GLib.SOURCE_REMOVE
+            return GLib.SOURCE_CONTINUE
+
+        GLib.timeout_add_seconds(1, poll)
+
+    @staticmethod
+    def _copy(text: str) -> None:
+        display = Gdk.Display.get_default()
+        if display is not None:
+            display.get_clipboard().set(text)
+
+    def _say(self, message: str) -> None:
+        if self._on_message:
+            self._on_message(message)
 
     # ── Conflicts ────────────────────────────────────────────────────
 
