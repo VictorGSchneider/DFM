@@ -89,6 +89,10 @@ class AnalyzerPage:
         # Summary cards
         self._content_box.append(self._build_summary(self._analysis))
 
+        # Missing packages come first: nothing else matters without them
+        if self._analysis.missing_packages:
+            self._content_box.append(self._build_missing_deps(self._analysis))
+
         # Conflicts section
         if self._analysis.conflicts:
             self._content_box.append(self._build_conflicts(self._analysis))
@@ -139,7 +143,7 @@ class AnalyzerPage:
             (str(total), "Files scanned", "analyzer-stat", None),
             (str(len(missing)), "Missing deps",
              "analyzer-error" if missing else "analyzer-ok",
-             "Not installed: " + ", ".join(missing) + "\n\nClick to install them"
+             "Not installed: " + ", ".join(missing)
              if missing else "All required packages are installed"),
             (str(analysis.config_errors), "Errors", "analyzer-error", None),
             (str(analysis.total_warnings), "Warnings", "analyzer-warning", None),
@@ -152,14 +156,7 @@ class AnalyzerPage:
             if label == "Missing deps":
                 card.add_css_class("analyzer-card-alert" if missing
                                    else "analyzer-card-clear")
-            shown: Gtk.Widget = card
-            if label == "Missing deps" and missing:
-                # A button, so it's reachable by keyboard and shows a hover state
-                shown = Gtk.Button(child=card, tooltip_text=tooltip)
-                shown.add_css_class("flat")
-                shown.add_css_class("analyzer-card-button")
-                shown.connect("clicked", self._on_install_clicked, analysis)
-            elif tooltip:
+            if tooltip:
                 card.set_tooltip_text(tooltip)
 
             val_label = Gtk.Label(label=value)
@@ -172,9 +169,49 @@ class AnalyzerPage:
             desc_label.add_css_class("caption")
             card.append(desc_label)
 
-            box.append(shown)
+            box.append(card)
 
         return box
+
+    # ── Missing dependencies ─────────────────────────────────────────
+
+    def _build_missing_deps(self, analysis: FullAnalysis) -> Gtk.Widget:
+        """One item, styled like a conflict, carrying the install actions."""
+        names = analysis.missing_dependencies
+        command = install_command(analysis.missing_packages)
+
+        group = Adw.PreferencesGroup(title="Missing Dependencies")
+        row = Adw.ActionRow()
+        count = len(analysis.missing_packages)
+        row.set_title(f"{count} required package{'s' if count != 1 else ''} not installed")
+        detail = ", ".join(names)
+        if command:
+            detail += f"\nFix: {command}"
+        row.set_subtitle(esc(detail))
+        row.set_subtitle_lines(0)  # show the whole list and the command
+
+        icon = Gtk.Image.new_from_icon_name(_SEV_ICON[IssueSeverity.ERROR])
+        icon.add_css_class(_SEV_CSS[IssueSeverity.ERROR])
+        icon.set_valign(Gtk.Align.CENTER)
+        row.add_prefix(icon)
+
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
+                          valign=Gtk.Align.CENTER)
+        if command:
+            copy_btn = Gtk.Button(icon_name="edit-copy-symbolic",
+                                  tooltip_text="Copy the install command")
+            copy_btn.add_css_class("flat")
+            copy_btn.connect("clicked", lambda _b: (self._copy(command),
+                                                    self._say("Copied to the clipboard")))
+            actions.append(copy_btn)
+        install_btn = Gtk.Button(label="Install…" if command else "How to install…")
+        install_btn.add_css_class("suggested-action")
+        install_btn.connect("clicked", self._on_install_clicked, analysis)
+        actions.append(install_btn)
+        row.add_suffix(actions)
+
+        group.add(row)
+        return group
 
     # ── Installing missing packages ──────────────────────────────────
 
