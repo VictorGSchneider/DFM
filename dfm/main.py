@@ -234,8 +234,18 @@ separator {
 .analyzer-card {
     background-color: @stoa_bg_light;
     border-radius: 8px;
-    padding: 12px 20px;
-    min-width: 80px;
+    padding: 12px 12px;
+    min-width: 84px;
+}
+
+/* Missing packages stop a config from working at all: make the card stand out */
+.analyzer-card-alert {
+    background-color: alpha(@stoa_terracotta, 0.14);
+    border: 1px solid alpha(@stoa_terracotta, 0.7);
+}
+
+.analyzer-card-clear {
+    border: 1px solid alpha(@stoa_olive, 0.35);
 }
 
 .analyzer-card-value {

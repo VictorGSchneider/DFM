@@ -63,6 +63,23 @@ class FullAnalysis:
         return sum(a.error_count for a in self.file_analyses)
 
     @property
+    def config_errors(self) -> int:
+        """Errors in the configs themselves (a missing package is counted apart)."""
+        return sum(
+            1 for a in self.file_analyses for i in a.issues
+            if i.severity == IssueSeverity.ERROR and i.category != "dependency"
+        )
+
+    @property
+    def missing_dependencies(self) -> list[str]:
+        """Required packages that aren't installed, each listed once."""
+        return sorted({
+            dep.display_name
+            for a in self.file_analyses for dep in a.deps
+            if not dep.installed and not dep.optional
+        })
+
+    @property
     def total_warnings(self) -> int:
         return sum(a.warning_count for a in self.file_analyses)
 

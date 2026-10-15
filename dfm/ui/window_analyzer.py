@@ -115,21 +115,36 @@ class AnalyzerPage:
     # ── Summary ──────────────────────────────────────────────────────
 
     def _build_summary(self, analysis: FullAnalysis) -> Gtk.Widget:
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        # Wraps onto a second line in a narrow window instead of overflowing
+        box = Gtk.FlowBox(
+            selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
+            min_children_per_line=1, max_children_per_line=5,
+            column_spacing=10, row_spacing=10, halign=Gtk.Align.START,
+        )
         box.set_margin_top(8)
-        box.set_halign(Gtk.Align.START)
 
+        missing = analysis.missing_dependencies
         total = len(analysis.file_analyses)
+        # Ordered by how much they block: no package = the app can't run at all
         cards = [
-            (str(total), "Files scanned", "analyzer-stat"),
-            (str(analysis.total_errors), "Errors", "analyzer-error"),
-            (str(analysis.total_warnings), "Warnings", "analyzer-warning"),
-            (str(analysis.healthy_count), "Healthy", "analyzer-ok"),
+            (str(total), "Files scanned", "analyzer-stat", None),
+            (str(len(missing)), "Missing deps",
+             "analyzer-error" if missing else "analyzer-ok",
+             "Not installed: " + ", ".join(missing) if missing
+             else "All required packages are installed"),
+            (str(analysis.config_errors), "Errors", "analyzer-error", None),
+            (str(analysis.total_warnings), "Warnings", "analyzer-warning", None),
+            (str(analysis.healthy_count), "Healthy", "analyzer-ok", None),
         ]
 
-        for value, label, css in cards:
+        for value, label, css, tooltip in cards:
             card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             card.add_css_class("analyzer-card")
+            if label == "Missing deps":
+                card.add_css_class("analyzer-card-alert" if missing
+                                   else "analyzer-card-clear")
+            if tooltip:
+                card.set_tooltip_text(tooltip)
 
             val_label = Gtk.Label(label=value)
             val_label.add_css_class("analyzer-card-value")
