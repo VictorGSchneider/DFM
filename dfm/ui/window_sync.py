@@ -12,14 +12,15 @@ from gi.repository import Gtk, Adw, GLib
 from dfm.ui.markup import esc
 from dfm.core.distro import install_hint
 from dfm.core.github_sync import (
-    get_repo_status, get_commit_history, is_gh_available, is_gh_authenticated,
+    get_repo_status, get_commit_history, get_remote_url,
+    is_gh_available, is_gh_authenticated,
 )
 from dfm.ui.tasks import run_async
 from dfm.ui.window_sync_push import on_push_clicked
 from dfm.ui.window_sync_pull import on_pull_clicked
 from dfm.ui.window_sync_gist import on_import_gist_clicked
 from dfm.ui.window_sync_setup import (
-    on_init_repo_clicked, on_clone_repo_clicked,
+    on_init_repo_clicked, on_clone_repo_clicked, on_use_existing_clicked,
 )
 
 
@@ -152,6 +153,20 @@ class SyncSection:
 
         self.run_task("Checking GitHub login…", is_gh_authenticated, checked)
 
+    def require_remote_access(self, then) -> None:
+        """Like require_auth, but only for GitHub remotes.
+
+        A repo hosted elsewhere (GitLab, a private server) is reached through
+        plain git, so it needs no `gh` login.
+        """
+        def got(url, error) -> None:
+            if error is None and url and "github.com" not in url:
+                then()
+            else:
+                self.require_auth(then)
+
+        run_async(get_remote_url, got)
+
     def toast(self, message: str) -> None:
         overlay = getattr(self._window, "_toast_overlay", None)
         if overlay is not None:
@@ -193,6 +208,8 @@ class SyncSection:
                 parts.append(esc(status["path"]))
             if status.get("branch"):
                 parts.append(f"branch: {esc(status['branch'])}")
+            if status.get("layout"):
+                parts.append(f"layout: {esc(status['layout'])}")
             if status.get("last_commit"):
                 parts.append(esc(status["last_commit"]))
             repo_row.set_subtitle(" · ".join(parts))
@@ -201,7 +218,7 @@ class SyncSection:
             repo_row.set_subtitle(f"Configured but not found: {esc(status['path'])}")
             icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
         else:
-            repo_row.set_subtitle("Not configured — create or clone a repo")
+            repo_row.set_subtitle("Not configured — create, clone or choose a repo")
             icon = Gtk.Image.new_from_icon_name("dialog-information-symbolic")
         icon.set_valign(Gtk.Align.CENTER)
         repo_row.add_suffix(icon)
@@ -303,6 +320,20 @@ class SyncSection:
         group.set_description(
             f"Requires GitHub CLI (gh). Install: {install_hint('github-cli')}"
         )
+
+        existing_row = Adw.ActionRow()
+        existing_row.set_title("Use an Existing Local Repo")
+        existing_row.set_subtitle(
+            "Already have your dotfiles in a cloned git repo? Point DFM at it "
+            "(any git host, no GitHub login needed)"
+        )
+        existing_btn = Gtk.Button(label="Choose…")
+        existing_btn.add_css_class("suggested-action")
+        existing_btn.set_valign(Gtk.Align.CENTER)
+        existing_btn.connect("clicked", lambda b: on_use_existing_clicked(self, b))
+        existing_row.add_suffix(existing_btn)
+        existing_row.set_activatable_widget(existing_btn)
+        group.add(existing_row)
 
         init_row = Adw.ActionRow()
         init_row.set_title("Create New Dotfiles Repo")

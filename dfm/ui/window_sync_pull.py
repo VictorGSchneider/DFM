@@ -1,64 +1,31 @@
 """Pull handler with overwrite preview for the GitHub sync section."""
 
-import os
-from pathlib import Path
-
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 
-from dfm.core.github_sync import pull_dotfiles, get_repo_path
-
-
-_SKIP_FILES = {"dfm_manifest.json", "README.md", "LICENSE", ".gitignore"}
+from dfm.core.github_sync import pull_dotfiles, get_repo_path, pull_preview
 
 
 def on_pull_clicked(section, _btn: Gtk.Button) -> None:
     """Handle pull: check prerequisites, show what will change, confirm."""
-    section.require_auth(lambda: _after_auth(section))
+    section.require_remote_access(lambda: _after_auth(section))
 
 
 def _after_auth(section) -> None:
     repo_path = get_repo_path()
     if not repo_path:
         section._alert("No Repository",
-                       "Create or clone a dotfiles repo first.")
+                       "Create, clone or choose a dotfiles repo first.")
         return
 
     _show_pull_diff_dialog(section, repo_path)
 
 
-def _walk_repo(repo_path: str) -> tuple[list[str], list[str]]:
-    """Return (overwrite_files, new_files) for a pull preview."""
-    home = str(Path.home())
-    overwrite_files: list[str] = []
-    new_files: list[str] = []
-
-    if not os.path.isdir(repo_path):
-        return overwrite_files, new_files
-
-    for root, dirs, files in os.walk(repo_path):
-        if ".git" in root.split(os.sep):
-            continue
-        dirs[:] = [d for d in dirs if d != ".git"]
-        for fname in files:
-            if fname in _SKIP_FILES:
-                continue
-            src = os.path.join(root, fname)
-            rel = os.path.relpath(src, repo_path)
-            dest = os.path.join(home, rel)
-            if os.path.exists(dest):
-                overwrite_files.append(rel)
-            else:
-                new_files.append(rel)
-
-    return overwrite_files, new_files
-
-
 def _show_pull_diff_dialog(section, repo_path: str) -> None:
     """Show what files would be overwritten by a pull."""
-    overwrite_files, new_files = _walk_repo(repo_path)
+    overwrite_files, new_files = pull_preview(repo_path)
 
     lines: list[str] = []
     if overwrite_files:
@@ -79,10 +46,10 @@ def _show_pull_diff_dialog(section, repo_path: str) -> None:
         if len(new_files) > 15:
             lines.append(f"  ... and {len(new_files) - 15} more")
     if not lines:
-        lines.append("No files found in the repository to pull.")
+        lines.append("Nothing to pull: your dotfiles already match the repository.")
 
     dialog = Adw.AlertDialog()
-    dialog.set_heading("Pull Dotfiles from GitHub")
+    dialog.set_heading("Pull Dotfiles")
     dialog.set_body("\n".join(lines))
     dialog.add_response("cancel", "Cancel")
     dialog.add_response("pull", "Pull")
@@ -99,7 +66,7 @@ def _on_pull_confirmed(dialog: Adw.AlertDialog, response: str, section) -> None:
         return
 
     section.run_task(
-        "Pulling from GitHub…",
+        "Pulling…",
         pull_dotfiles,
         lambda status, error: _pull_done(section, status, error),
     )

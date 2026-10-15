@@ -27,6 +27,11 @@ from dfm.core.github_sync.repo import (
     pull_dotfiles,
     get_repo_status,
     get_commit_history,
+    get_remote_url,
+    find_existing_repos,
+    inspect_repo,
+    use_existing_repo,
+    pull_preview,
 )
 
 __all__ = [
@@ -45,4 +50,9 @@ __all__ = [
     "pull_dotfiles",
     "get_repo_status",
     "get_commit_history",
+    "get_remote_url",
+    "find_existing_repos",
+    "inspect_repo",
+    "use_existing_repo",
+    "pull_preview",
 ]
