@@ -2,40 +2,46 @@
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 
 def _config_file() -> str:
-    config_dir = os.path.join(str(Path.home()), ".config", "dfm")
-    os.makedirs(config_dir, exist_ok=True)
-    return os.path.join(config_dir, "config.json")
+    return os.path.join(str(Path.home()), ".config", "dfm", "config.json")
+
+
+def _load() -> dict:
+    """Read the config; anything unreadable or not a JSON object counts as empty."""
+    try:
+        with open(_config_file(), encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):  # ValueError covers bad JSON and bad UTF-8
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
 
 
 def get_repo_path() -> str:
     """Get the local dotfiles repo path."""
-    config_file = _config_file()
-    if os.path.isfile(config_file):
-        try:
-            with open(config_file) as f:
-                cfg = json.load(f)
-            return cfg.get("repo_path", "")
-        except (json.JSONDecodeError, PermissionError):
-            pass
-    return ""
+    path = _load().get("repo_path", "")
+    return path if isinstance(path, str) else ""
 
 
 def save_repo_path(path: str) -> None:
     """Save the configured repo path."""
     config_file = _config_file()
+    os.makedirs(os.path.dirname(config_file), exist_ok=True)
 
-    cfg: dict = {}
-    if os.path.isfile(config_file):
-        try:
-            with open(config_file) as f:
-                cfg = json.load(f)
-        except (json.JSONDecodeError, PermissionError):
-            pass
-
+    cfg = _load()
     cfg["repo_path"] = path
-    with open(config_file, "w") as f:
-        json.dump(cfg, f, indent=2)
+
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(config_file), prefix=".config-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        os.replace(tmp, config_file)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise

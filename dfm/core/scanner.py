@@ -148,6 +148,18 @@ class DotfileEntry:
         return self.path
 
 
+def carry_over_enabled(entries: list[DotfileEntry],
+                       previous: list[DotfileEntry]) -> None:
+    """Keep the user's enabled/disabled choices across a rescan.
+
+    A fresh scan builds new entries that default to enabled, so without this
+    every rescan (import, template install, pull, "Reload") would undo them.
+    """
+    states = {(e.name, e.path): e.enabled for e in previous}
+    for entry in entries:
+        entry.enabled = states.get((entry.name, entry.path), entry.enabled)
+
+
 def scan_dotfiles(home_dir: str | None = None) -> list[DotfileEntry]:
     """Scan the system for dotfiles and config directories."""
     if home_dir is None:

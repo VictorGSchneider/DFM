@@ -7,19 +7,20 @@ import tarfile
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from dataclasses import asdict
 
 from dfm.core.scanner import DotfileEntry
 
 
 def export_dotfiles(entries: list[DotfileEntry], output_path: str,
-                    format: str = "tar.gz") -> str:
+                    format: str = "tar.gz", archive_name: str | None = None) -> str:
     """Export selected dotfiles to an archive.
 
     Args:
         entries: List of dotfile entries to export.
         output_path: Directory to save the archive.
         format: Archive format ('tar.gz' or 'directory').
+        archive_name: File name for the tar.gz (".tar.gz" is added if missing);
+            default is dotfiles_<host>_<timestamp>.tar.gz.
 
     Returns:
         Path to the created archive/directory.
@@ -35,7 +36,13 @@ def export_dotfiles(entries: list[DotfileEntry], output_path: str,
         return export_dir
 
     # tar.gz
-    archive_name = f"dotfiles_{hostname}_{timestamp}.tar.gz"
+    if archive_name:
+        archive_name = os.path.basename(archive_name)
+        if not archive_name.endswith(".tar.gz"):
+            archive_name += ".tar.gz"
+    else:
+        archive_name = f"dotfiles_{hostname}_{timestamp}.tar.gz"
+    os.makedirs(output_path, exist_ok=True)
     archive_path = os.path.join(output_path, archive_name)
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -61,6 +68,9 @@ def import_dotfiles(archive_path: str, target_home: str | None = None,
 
     Returns:
         List of dicts describing actions taken/planned.
+
+    Raises:
+        ValueError: `archive_path` is neither a directory nor a tar archive.
     """
     if target_home is None:
         target_home = str(Path.home())
@@ -92,6 +102,8 @@ def import_dotfiles(archive_path: str, target_home: str | None = None,
             actions = _plan_import(source_dir, manifest, target_home)
             if not dry_run:
                 _execute_import(actions)
+    else:
+        raise ValueError(f"Not a directory or tar archive: {archive_path}")
 
     return actions
 
@@ -110,7 +122,8 @@ def _copy_entries_to_dir(entries: list[DotfileEntry], dest_dir: str) -> None:
 
         if entry.is_directory:
             if os.path.isdir(entry.path):
-                shutil.copytree(entry.path, dest_path, dirs_exist_ok=True)
+                shutil.copytree(entry.path, dest_path, dirs_exist_ok=True,
+                                ignore_dangling_symlinks=True)
         else:
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             if os.path.isfile(entry.path):
@@ -203,6 +216,18 @@ def _plan_import(source_dir: str, manifest: dict | None,
     return actions
 
 
+def _backup_overwritten(source_dir: str, target_dir: str) -> None:
+    """Back up every existing file a directory import is about to overwrite."""
+    from dfm.core.backup import create_backup
+
+    for root, _dirs, files in os.walk(source_dir):
+        rel_root = os.path.relpath(root, source_dir)
+        for fname in files:
+            existing = os.path.normpath(os.path.join(target_dir, rel_root, fname))
+            if os.path.isfile(existing):
+                create_backup(existing, reason="import")
+
+
 def _execute_import(actions: list[dict]) -> None:
     """Execute planned import actions."""
     from dfm.core.backup import create_backup
@@ -218,7 +243,9 @@ def _execute_import(actions: list[dict]) -> None:
         # Copy new file
         try:
             if action.get("is_directory") and os.path.isdir(source):
-                shutil.copytree(source, target, dirs_exist_ok=True)
+                _backup_overwritten(source, target)
+                shutil.copytree(source, target, dirs_exist_ok=True,
+                                ignore_dangling_symlinks=True)
             else:
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 shutil.copy2(source, target)

@@ -8,20 +8,15 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 
-from dfm.core.github_sync import (
-    is_gh_available, is_gh_authenticated, import_gist,
-)
+from dfm.core.github_sync import import_gist
 
 
 def on_import_gist_clicked(section, _btn: Gtk.Button) -> None:
     """Show the import-from-gist dialog."""
-    if not is_gh_available():
-        section._show_gh_missing_dialog()
-        return
-    if not is_gh_authenticated():
-        section._show_gh_auth_dialog()
-        return
+    section.require_auth(lambda: _show_import_dialog(section))
 
+
+def _show_import_dialog(section) -> None:
     dialog = Adw.AlertDialog()
     dialog.set_heading("Import from Gist")
     dialog.set_body("Enter a Gist ID or URL and the local path to save to.")
@@ -76,7 +71,17 @@ def _on_import_gist_response(dialog: Adw.AlertDialog, response: str,
                        "Please enter a path to save the file.")
         return
 
-    status = import_gist(gist_id, target_path)
+    section.run_task(
+        "Importing the gist…",
+        lambda: import_gist(gist_id, target_path),
+        lambda status, error: _import_done(section, status, error),
+    )
+
+
+def _import_done(section, status, error) -> None:
+    if error is not None:
+        section._alert("Import Failed", str(error))
+        return
     heading = "Import Complete" if status.success else "Import Failed"
     section._alert(heading, status.message)
 

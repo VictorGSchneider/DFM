@@ -203,6 +203,8 @@ class SidebarManager:
         # "All Dotfiles" row
         all_row = self._make_all_dotfiles_row()
         self._tree_box.append(all_row)
+        if self.on_analyzer_selected:
+            self._tree_box.append(self._make_analyzer_row())
 
         # Favorites section (read once, not per-row)
         self._cached_favorites = set(get_favorites())

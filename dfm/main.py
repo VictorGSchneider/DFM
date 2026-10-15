@@ -10,6 +10,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio
 
+from dfm.core.runtime import runtime_problem
 from dfm.ui.window import DfmWindow
 
 
@@ -324,6 +325,14 @@ class DfmApplication(Adw.Application):
 
 def main() -> None:
     """Entry point."""
+    problem = runtime_problem(
+        (Gtk.get_major_version(), Gtk.get_minor_version()),
+        (Adw.get_major_version(), Adw.get_minor_version()),
+    )
+    if problem:
+        print(problem, file=sys.stderr)
+        sys.exit(1)
+
     app = DfmApplication()
     app.run(sys.argv)
 

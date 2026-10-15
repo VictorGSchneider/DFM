@@ -2,8 +2,10 @@
 
 import re
 
+from dfm.core.parser.blocks import block_open, is_block_close
 from dfm.core.parser.types import ConfigField, FieldType
 from dfm.core.parser.infer import make_display_name
+from dfm.core.parser.values import is_quoted, split_value
 
 
 def parse_ini(content: str) -> list[ConfigField]:
@@ -95,6 +97,7 @@ def parse_generic(content: str) -> list[ConfigField]:
     """Parse any config file with generic key=value or key: value detection."""
     fields = []
     current_section = "General"
+    blocks: list[str] = []  # names of the `name {` blocks we are inside
     comment_buffer = ""
 
     for line_num, line in enumerate(content.splitlines(), 1):
@@ -106,6 +109,27 @@ def parse_generic(content: str) -> list[ConfigField]:
 
         if stripped.startswith(("#", ";", "//", "!")):
             comment_buffer = stripped.lstrip("#;/! ").strip()
+            continue
+
+        name = block_open(stripped)
+        if name is not None:
+            blocks.append(name)
+            fields.append(ConfigField(
+                key=name,
+                display_name=name,
+                value="",
+                field_type=FieldType.COMMENT,
+                section=" > ".join(blocks),
+                line_number=line_num,
+                original_line=line,
+            ))
+            comment_buffer = ""
+            continue
+
+        if is_block_close(stripped):
+            if blocks:
+                blocks.pop()
+            comment_buffer = ""
             continue
 
         match = re.match(r"^\[(.+)\]$", stripped)
@@ -125,13 +149,15 @@ def parse_generic(content: str) -> list[ConfigField]:
 
         match = re.match(r"^([\w.\-]+)\s*[=:]\s*(.*)", stripped)
         if match:
-            key, value = match.group(1), match.group(2).strip().strip("\"'")
+            key = match.group(1)
+            token, _ = split_value(match.group(2).strip(), terminator=True)
+            value = token[1:-1] if is_quoted(token) else token
             fields.append(ConfigField(
                 key=key,
                 display_name=make_display_name(key),
                 value=value,
                 field_type=FieldType.TEXT,
-                section=current_section,
+                section=" > ".join(blocks) or current_section,
                 comment=comment_buffer,
                 line_number=line_num,
                 original_line=line,
@@ -147,7 +173,7 @@ def parse_generic(content: str) -> list[ConfigField]:
                 display_name=make_display_name(key),
                 value=value,
                 field_type=FieldType.TEXT,
-                section=current_section,
+                section=" > ".join(blocks) or current_section,
                 comment=comment_buffer,
                 line_number=line_num,
                 original_line=line,

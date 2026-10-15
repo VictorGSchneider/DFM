@@ -6,21 +6,16 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 
 from dfm.core.scanner import DotfileEntry
-from dfm.core.github_sync import (
-    is_gh_available, is_gh_authenticated, push_dotfiles, get_repo_path,
-)
+from dfm.core.github_sync import push_dotfiles, get_repo_path
 from dfm.core.diff_utils import repo_diff_summary, format_diff_stats
 
 
 def on_push_clicked(section, _btn: Gtk.Button) -> None:
     """Handle push: check prerequisites, show diff, then confirm."""
-    if not is_gh_available():
-        section._show_gh_missing_dialog()
-        return
-    if not is_gh_authenticated():
-        section._show_gh_auth_dialog()
-        return
+    section.require_auth(lambda: _after_auth(section))
 
+
+def _after_auth(section) -> None:
     repo_path = get_repo_path()
     if not repo_path:
         section._alert(
@@ -98,7 +93,17 @@ def _on_push_confirmed(dialog: Adw.AlertDialog, response: str,
     if response != "push":
         return
 
-    status = push_dotfiles(entries)
+    section.run_task(
+        "Pushing to GitHub…",
+        lambda: push_dotfiles(entries),
+        lambda status, error: _push_done(section, status, error),
+    )
+
+
+def _push_done(section, status, error) -> None:
+    if error is not None:
+        section._alert("Push Failed", str(error))
+        return
     heading = "Push Complete" if status.success else "Push Failed"
     body = status.message
     if status.details:

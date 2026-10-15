@@ -91,7 +91,8 @@ Built-in viewer for inspecting dotfiles without leaving the app:
 
 - Automatic backup before every edit
 - Versioned history stored in `~/.local/share/dfm/backups/`
-- Restore any previous version from the UI
+- Restore any previous version from the UI, with a diff against the current file
+- Which dotfiles you switched off is remembered between runs (`~/.local/share/dfm/state.json`)
 
 ### Profiles & Templates
 
@@ -178,9 +179,11 @@ Export your dotfiles as a `.tar.gz` archive with a manifest and import them on a
 ## Dependencies
 
 - Python 3.10+
-- GTK 4
-- libadwaita
+- GTK 4.12 or newer
+- libadwaita 1.5 or newer (Debian 12 and Ubuntu 22.04 ship older versions)
 - PyGObject
+- PyYAML (YAML parsing)
+- `tomli` — only on Python 3.10 (TOML parsing; built in from 3.11)
 - GitHub CLI (`gh`) — optional, required for GitHub sync features
 - `lua` — optional, enables full syntax checking of Lua configs via `luac`
 
@@ -251,12 +254,14 @@ as an editable pipx (or venv) package, links the desktop entry, and binds
 ```
 dfm/
 ├── main.py                # Entry point, application class, CSS
-├── core/
+├── core/                  # No GTK here: everything below is unit-tested
 │   ├── scanner.py         # Auto-detection of dotfiles on the system
-│   ├── parser.py          # Config file parser with smart field type inference
+│   ├── parser/            # Per-format parsers, field-type inference, and the
+│   │                      #   writer that edits one value in place (keeps quotes,
+│   │                      #   comments, `;`, yes/no spelling and colour syntax)
 │   ├── backup.py          # Versioned backup system
 │   ├── profiles.py        # Profile management (save/switch configs)
-│   ├── templates.py       # Built-in config templates
+│   ├── templates/         # Built-in config templates
 │   ├── wizard.py          # Initial setup wizard
 │   ├── validator.py       # Syntax validation for config files
 │   ├── conflicts.py       # Conflict detection between configs
@@ -265,18 +270,32 @@ dfm/
 │   ├── diff_utils.py      # Diff utilities for comparing versions
 │   ├── notes.py           # Per-dotfile user notes
 │   ├── dependencies.py    # Dependency checking for detected tools
+│   ├── distro.py          # Package-manager abstraction (apt, dnf, pacman, ...)
 │   ├── exporter.py        # Import/export as .tar.gz archives
-│   └── github_sync.py     # GitHub repo sync and gist sharing via gh CLI
+│   ├── runtime.py         # Minimum GTK / libadwaita check
+│   ├── state.py           # Remembers which dotfiles you switched off
+│   └── github_sync/       # GitHub repo sync and gist sharing via gh CLI
 └── ui/
     ├── window.py           # Main window with sidebar + content panel
     ├── window_sidebar.py   # Sidebar navigation
-    ├── window_config_page.py # Smart config editing page
-    ├── window_all_dotfiles.py # All Dotfiles overview page
+    ├── window_config_page*.py # Smart config editing page (fields, sections, handlers)
+    ├── window_all_dotfiles*.py # All Dotfiles overview page
     ├── window_analyzer.py  # Analyzer & Debugger diagnostics page
-    ├── window_dialogs.py   # Dialogs (backup, profiles, templates, etc.)
-    ├── window_sync.py      # GitHub sync UI
-    └── viewer.py           # In-app raw text viewer with syntax highlighting
+    ├── window_dialogs/     # Dialogs (profiles, templates, wizard, backup history, diff)
+    ├── window_sync*.py     # GitHub sync UI (slow work runs in a worker thread)
+    ├── viewer.py           # Raw text viewer with syntax highlighting
+    ├── tasks.py            # run_async: keep git/gh/network off the UI thread
+    └── markup.py           # esc(): escape text before it reaches Adw row titles
+tests/                      # unittest suite for dfm.core
 ```
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+The suite covers `dfm.core` only and needs no display, GTK, or network.
 
 ## How It Works
 

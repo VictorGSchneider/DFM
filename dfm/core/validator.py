@@ -31,7 +31,7 @@ def validate_file(file_path: str) -> ValidationResult:
         return ValidationResult(False, ["File not found"], [])
 
     try:
-        with open(file_path) as f:
+        with open(file_path, errors="replace") as f:
             content = f.read()
     except OSError as e:
         return ValidationResult(False, [f"Cannot read: {e}"], [])
@@ -59,14 +59,28 @@ def validate_file(file_path: str) -> ValidationResult:
     return _validate_generic(content)
 
 
+_JSON_TOKEN = re.compile(r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*.*?\*/', re.DOTALL)
+
+
+def _strip_json_comments(content: str) -> str:
+    """Remove // and /* */ comments but leave strings (e.g. URLs) alone.
+
+    Newlines inside removed comments are kept so error positions stay correct.
+    """
+    def repl(match: re.Match) -> str:
+        if match.group(1) is not None:
+            return match.group(1)
+        return "\n" * match.group(0).count("\n")
+
+    return _JSON_TOKEN.sub(repl, content)
+
+
 def _validate_json(content: str) -> ValidationResult:
     """Validate JSON syntax."""
     errors = []
     warnings = []
 
-    # Strip JSONC comments for validation
-    cleaned = re.sub(r'//.*$', '', content, flags=re.MULTILINE)
-    cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+    cleaned = _strip_json_comments(content)
 
     try:
         json.loads(cleaned)
@@ -139,7 +153,7 @@ def _validate_yaml(content: str) -> ValidationResult:
 
     try:
         import yaml
-        yaml.safe_load(content)
+        list(yaml.safe_load_all(content))  # '---' separated streams are valid
     except ImportError:
         # Basic validation
         for i, line in enumerate(content.splitlines(), 1):
@@ -263,34 +277,71 @@ def _validate_ini(content: str) -> ValidationResult:
     return ValidationResult(len(errors) == 0, errors, warnings)
 
 
-def _validate_shell(content: str) -> ValidationResult:
-    """Validate shell script syntax."""
-    errors = []
-    warnings = []
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
+_CASE_PATTERN = re.compile(r"^\s*\(?[\w*?|.\-\"\[\]]+\)", re.MULTILINE)
 
-    # Check matching quotes
-    for i, line in enumerate(content.splitlines(), 1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+
+def _scan_shell(content: str) -> tuple[str, int | None]:
+    """Reduce shell source to its structure.
+
+    Returns (code, unterminated_line): `code` has comments, heredoc bodies and
+    quoted strings removed; `unterminated_line` is the line a quote was opened
+    on and never closed (None if all quotes balance). Quotes may span lines.
+    """
+    out: list[str] = []
+    quote = ""
+    quote_line = 0
+    heredoc_tag = ""
+
+    for lineno, line in enumerate(content.splitlines(), 1):
+        if heredoc_tag:
+            if line.strip() == heredoc_tag:
+                heredoc_tag = ""
             continue
 
-        # Simple unmatched quote detection (ignoring escaped quotes)
-        single_count = stripped.count("'") - stripped.count("\\'")
-        double_count = stripped.count('"') - stripped.count('\\"')
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if quote:
+                if ch == "\\" and quote == '"':
+                    i += 1
+                elif ch == quote:
+                    quote = ""
+                    out.append('""')
+            elif ch == "\\":
+                i += 1
+            elif ch == "#" and (i == 0 or line[i - 1].isspace()):
+                break
+            elif ch in "'\"":
+                quote, quote_line = ch, lineno
+            else:
+                out.append(ch)
+            i += 1
+        out.append("\n")
 
-        if single_count % 2 != 0 and not stripped.endswith("\\"):
-            warnings.append(f"Line {i}: Possibly unmatched single quote")
-        if double_count % 2 != 0 and not stripped.endswith("\\"):
-            warnings.append(f"Line {i}: Possibly unmatched double quote")
+        if not quote:
+            match = _HEREDOC.search(line)
+            if match:
+                heredoc_tag = match.group(2)
 
-    # Check matching braces/brackets
-    content_no_comments = re.sub(r'#.*$', '', content, flags=re.MULTILINE)
-    opens = content_no_comments.count("{") + content_no_comments.count("(")
-    closes = content_no_comments.count("}") + content_no_comments.count(")")
+    return "".join(out), (quote_line if quote else None)
+
+
+def _validate_shell(content: str) -> ValidationResult:
+    """Validate shell script syntax."""
+    warnings = []
+
+    code, unterminated = _scan_shell(content)
+    if unterminated:
+        warnings.append(f"Line {unterminated}: Possibly unterminated quote")
+
+    code = _CASE_PATTERN.sub("", code)  # `start)` in a case block is not a paren
+    opens = code.count("{") + code.count("(")
+    closes = code.count("}") + code.count(")")
     if opens != closes:
         warnings.append("Mismatched braces/parentheses")
 
-    return ValidationResult(len(errors) == 0, errors, warnings)
+    return ValidationResult(True, [], warnings)
 
 
 def _validate_xresources(content: str) -> ValidationResult:

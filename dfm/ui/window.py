@@ -7,7 +7,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib
 
-from dfm.core.scanner import scan_dotfiles, DotfileEntry
+from dfm.core.scanner import scan_dotfiles, carry_over_enabled, DotfileEntry
+from dfm.core.state import apply_saved_enabled, remember_enabled
 from dfm.core.monitor import DotfileMonitor
 from dfm.ui.window_sidebar import SidebarManager
 from dfm.ui.window_all_dotfiles import AllDotfilesPage
@@ -29,6 +30,7 @@ class DfmWindow(Adw.ApplicationWindow):
 
         self.dotfiles: list[DotfileEntry] = []
         self.current_entry: DotfileEntry | None = None
+        self._persist_pending = False
 
         self._monitor = DotfileMonitor(poll_interval=3.0)
         self._monitor.on_change(self._on_file_changed_external)
@@ -169,7 +171,13 @@ class DfmWindow(Adw.ApplicationWindow):
 
     def _scan_and_populate(self) -> None:
         """Scan for dotfiles and populate all UI."""
+        previous = self.dotfiles
+        viewing = self.content_stack.get_visible_child_name()
+        current = self.current_entry
         self.dotfiles = scan_dotfiles()
+        apply_saved_enabled(self.dotfiles)          # choices from earlier runs
+        carry_over_enabled(self.dotfiles, previous)  # choices made this run win
+        remember_enabled(self.dotfiles)
 
         while True:
             child = self.content_stack.get_first_child()
@@ -195,6 +203,16 @@ class DfmWindow(Adw.ApplicationWindow):
 
         self._sidebar.populate(self.dotfiles)
         self._monitor.track_entries(self.dotfiles)
+        self._restore_view(viewing, current)
+
+    def _restore_view(self, viewing: str | None, current: DotfileEntry | None) -> None:
+        """Stay on the page the user was looking at after the pages were rebuilt."""
+        if viewing == "analyzer":
+            self._on_analyzer_selected()
+        elif current is not None:
+            same = next((e for e in self.dotfiles
+                         if (e.name, e.path) == (current.name, current.path)), None)
+            self._on_entry_selected(same)
 
     def _build_all_dotfiles_combined(self) -> Gtk.Widget:
         """Build the All Dotfiles page with sync section embedded."""
@@ -230,6 +248,14 @@ class DfmWindow(Adw.ApplicationWindow):
     def _on_dotfile_toggled(self, entry: DotfileEntry, new_state: bool) -> None:
         """Handle dotfile toggle from All Dotfiles page."""
         entry.enabled = new_state
+        if not self._persist_pending:  # a bulk toggle calls this once per entry
+            self._persist_pending = True
+            GLib.idle_add(self._persist_enabled)
+
+    def _persist_enabled(self) -> bool:
+        self._persist_pending = False
+        remember_enabled(self.dotfiles)
+        return False
 
     # ── File Monitor ────────────────────────────────────────────────
 
@@ -249,7 +275,10 @@ class DfmWindow(Adw.ApplicationWindow):
     # ── Tool dialogs ────────────────────────────────────────────────
 
     def _on_profiles(self) -> None:
-        ProfilesDialog(self, self.dotfiles).present()
+        ProfilesDialog(
+            self, self.dotfiles, on_rescan_cb=self._scan_and_populate,
+            get_dotfiles_cb=lambda: self.dotfiles,
+        ).present()
 
     def _on_templates(self) -> None:
         TemplatesDialog(self, on_rescan_cb=self._scan_and_populate).present()

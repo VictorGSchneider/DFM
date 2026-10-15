@@ -1,11 +1,13 @@
 """Auto-backup system - snapshot dotfiles before edits."""
 
+import filecmp
 import os
 import json
 import shutil
+import tempfile
 import time
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 BACKUP_DIR = Path.home() / ".local" / "share" / "dfm" / "backups"
@@ -57,11 +59,15 @@ def create_backup(file_path: str, reason: str = "edit") -> BackupEntry | None:
     file_backup_dir = BACKUP_DIR / safe_name
     file_backup_dir.mkdir(parents=True, exist_ok=True)
 
+    # Don't pile up identical snapshots (every slider tick triggers a backup)
+    latest = get_backups(file_path)
+    if latest and filecmp.cmp(file_path, latest[0].backup_path, shallow=False):
+        return latest[0]
+
     ts = time.time()
     ts_str = time.strftime("%Y%m%d_%H%M%S", time.localtime(ts))
     basename = os.path.basename(file_path)
-    backup_name = f"{basename}.{ts_str}.bak"
-    backup_path = file_backup_dir / backup_name
+    backup_path = _unique_path(file_backup_dir, f"{basename}.{ts_str}_{int(ts % 1 * 1e6):06d}", ".bak")
 
     shutil.copy2(file_path, backup_path)
 
@@ -80,6 +86,16 @@ def create_backup(file_path: str, reason: str = "edit") -> BackupEntry | None:
     _prune_backups(file_backup_dir)
 
     return entry
+
+
+def _unique_path(directory: Path, stem: str, suffix: str) -> Path:
+    """A path in `directory` that doesn't exist yet (two edits can share a clock tick)."""
+    candidate = directory / f"{stem}{suffix}"
+    n = 1
+    while candidate.exists():
+        candidate = directory / f"{stem}-{n}{suffix}"
+        n += 1
+    return candidate
 
 
 def get_backups(file_path: str) -> list[BackupEntry]:
@@ -125,7 +141,10 @@ def restore_backup(backup: BackupEntry) -> bool:
     if os.path.isfile(backup.file_path):
         create_backup(backup.file_path, reason="pre-restore")
 
-    shutil.copy2(backup.backup_path, backup.file_path)
+    try:
+        shutil.copy2(backup.backup_path, backup.file_path)
+    except OSError:
+        return False
     return True
 
 
@@ -137,9 +156,9 @@ def get_diff(file_path: str, backup: BackupEntry) -> str:
         return ""
 
     try:
-        with open(backup.backup_path) as f:
+        with open(backup.backup_path, errors="replace") as f:
             old_lines = f.readlines()
-        with open(file_path) as f:
+        with open(file_path, errors="replace") as f:
             new_lines = f.readlines()
     except OSError:
         return ""
@@ -171,8 +190,22 @@ def _save_metadata(backup_dir: Path, entry: BackupEntry) -> None:
         "reason": entry.reason,
     })
 
-    with open(meta_path, "w") as f:
-        json.dump(data, f, indent=2)
+    _write_metadata(meta_path, data)
+
+
+def _write_metadata(meta_path: Path, data: dict) -> None:
+    """Replace metadata.json in one step so a crash can't leave it truncated."""
+    fd, tmp = tempfile.mkstemp(dir=meta_path.parent, prefix=".metadata-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, meta_path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _prune_backups(backup_dir: Path) -> None:
@@ -201,5 +234,4 @@ def _prune_backups(backup_dir: Path) -> None:
             os.remove(path)
 
     data["backups"] = keep
-    with open(meta_path, "w") as f:
-        json.dump(data, f, indent=2)
+    _write_metadata(meta_path, data)

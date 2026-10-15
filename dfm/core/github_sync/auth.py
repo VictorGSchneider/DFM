@@ -1,5 +1,6 @@
 """GitHub CLI availability and authentication helpers."""
 
+import os
 import shutil
 import subprocess
 
@@ -39,7 +40,9 @@ def get_gh_username() -> str:
 
 def run_git(args: list[str], cwd: str, timeout: int = 30) -> subprocess.CompletedProcess:
     """Run a git command in the given directory."""
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}  # fail instead of hanging
     return subprocess.run(
         ["git"] + args,
-        cwd=cwd, capture_output=True, text=True, timeout=timeout,
+        cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env,
+        errors="replace",
     )

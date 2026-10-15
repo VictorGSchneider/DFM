@@ -5,6 +5,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gdk
 
+from dfm.ui.markup import esc
 from dfm.core.profiles import (
     list_profiles, save_profile, load_profile,
     delete_profile, export_profile_json,
@@ -17,9 +18,12 @@ from dfm.ui.window_dialogs._common import (
 class ProfilesDialog(StatusMixin):
     """Manage configuration profiles: save, load, delete, export."""
 
-    def __init__(self, parent_window, dotfiles: list) -> None:
+    def __init__(self, parent_window, dotfiles: list, on_rescan_cb=None,
+                 get_dotfiles_cb=None) -> None:
         self.parent_window = parent_window
         self.dotfiles = dotfiles
+        self.on_rescan_cb = on_rescan_cb          # redraw the main window
+        self.get_dotfiles_cb = get_dotfiles_cb    # the main window's current entries
         self.dialog = make_dialog("Profiles", width=650, height=550)
         self._build_ui()
 
@@ -115,10 +119,10 @@ class ProfilesDialog(StatusMixin):
 
     def _build_profile_row(self, profile) -> Adw.ActionRow:
         row = Adw.ActionRow()
-        row.set_title(profile.name)
+        row.set_title(esc(profile.name))
         subtitle_parts = []
         if profile.description:
-            subtitle_parts.append(profile.description)
+            subtitle_parts.append(esc(profile.description))
         subtitle_parts.append(
             f"{profile.dotfile_count} dotfiles | {profile.display_time}"
         )
@@ -174,6 +178,10 @@ class ProfilesDialog(StatusMixin):
         profile_name = btn._profile_name
         try:
             actions = load_profile(profile_name, self.dotfiles)
+            if self.on_rescan_cb is not None:
+                self.on_rescan_cb()  # show the restored enabled states and configs
+                if self.get_dotfiles_cb is not None:
+                    self.dotfiles = self.get_dotfiles_cb()
             if actions:
                 msg = f"Loaded '{profile_name}':\n" + "\n".join(
                     f"  {a}" for a in actions
@@ -186,6 +194,23 @@ class ProfilesDialog(StatusMixin):
 
     def _on_delete_clicked(self, btn: Gtk.Button) -> None:
         profile_name = btn._profile_name
+        confirm = Adw.AlertDialog()
+        confirm.set_heading("Delete Profile?")
+        confirm.set_body(
+            f"'{profile_name}' and its saved config snapshots will be removed. "
+            "This can't be undone."
+        )
+        confirm.add_response("cancel", "Cancel")
+        confirm.add_response("delete", "Delete")
+        confirm.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        confirm.set_default_response("cancel")
+        confirm.set_close_response("cancel")
+        confirm.connect("response", self._on_delete_confirmed, profile_name)
+        confirm.present(self.dialog)
+
+    def _on_delete_confirmed(self, _dialog, response: str, profile_name: str) -> None:
+        if response != "delete":
+            return
         if delete_profile(profile_name):
             self._show_status(f"Deleted profile '{profile_name}'")
             self._refresh_profiles()
