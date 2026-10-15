@@ -12,7 +12,7 @@ from dfm.core.diff_utils import repo_diff_summary, format_diff_stats
 
 def on_push_clicked(section, _btn: Gtk.Button) -> None:
     """Handle push: check prerequisites, show diff, then confirm."""
-    section.require_auth(lambda: _after_auth(section))
+    section.require_remote_access(lambda: _after_auth(section))
 
 
 def _after_auth(section) -> None:
@@ -20,7 +20,7 @@ def _after_auth(section) -> None:
     if not repo_path:
         section._alert(
             "No Repository",
-            "Create or clone a dotfiles repo first using the Setup section below.",
+            "Create, clone or choose a dotfiles repo first using the Setup section below.",
         )
         return
 
@@ -94,7 +94,7 @@ def _on_push_confirmed(dialog: Adw.AlertDialog, response: str,
         return
 
     section.run_task(
-        "Pushing to GitHub…",
+        "Pushing…",
         lambda: push_dotfiles(entries),
         lambda status, error: _push_done(section, status, error),
     )

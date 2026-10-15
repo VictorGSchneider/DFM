@@ -1,5 +1,6 @@
 """Dotfiles repo operations: init/clone/push/pull/status/history."""
 
+import filecmp
 import os
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ from dfm.core.github_sync.auth import (
     is_gh_available, is_gh_authenticated, get_gh_username, run_git,
 )
 from dfm.core.github_sync.repo_config import get_repo_path, save_repo_path
+from dfm.core.github_sync.layout import detect_layout, repo_files, repo_rel
 
 
 def init_repo(repo_name: str = "dotfiles", private: bool = True) -> SyncStatus:
@@ -119,19 +121,26 @@ def push_dotfiles(entries: list[DotfileEntry],
         )
 
     home = str(Path.home())
-    details = _copy_entries_to_repo(entries, home, repo_path)
+    targets: list[str] = []
+    details = _copy_entries_to_repo(entries, home, repo_path, targets)
 
     if not commit_message:
         commit_message = f"Update dotfiles via DFM ({os.uname().nodename})"
 
+    if not targets:
+        return SyncStatus(success=True,
+                          message="No changes to push - dotfiles are up to date.",
+                          details=details)
+
     try:
-        added = run_git(["add", "-A"], cwd=repo_path)
+        # Only touch what DFM copied: an existing repo may hold other work in progress.
+        added = run_git(["add", "--"] + targets, cwd=repo_path)
         if added.returncode != 0:
             return SyncStatus(success=False,
                               message=f"git add failed: {added.stderr.strip()}",
                               details=details)
 
-        status = run_git(["status", "--porcelain"], cwd=repo_path)
+        status = run_git(["status", "--porcelain", "--"] + targets, cwd=repo_path)
         if not status.stdout.strip():
             return SyncStatus(
                 success=True,
@@ -139,7 +148,8 @@ def push_dotfiles(entries: list[DotfileEntry],
                 details=details,
             )
 
-        committed = run_git(["commit", "-m", commit_message], cwd=repo_path)
+        committed = run_git(["commit", "-m", commit_message, "--"] + targets,
+                            cwd=repo_path)
         if committed.returncode != 0:
             reason = (committed.stderr or committed.stdout).strip()
             return SyncStatus(success=False,
@@ -158,7 +168,7 @@ def push_dotfiles(entries: list[DotfileEntry],
         return SyncStatus(
             success=True,
             message=f"Pushed {len([d for d in details if d.startswith('+')])} "
-                    f"dotfiles to GitHub.",
+                    f"dotfiles.",
             details=details,
         )
     except subprocess.TimeoutExpired:
@@ -166,15 +176,19 @@ def push_dotfiles(entries: list[DotfileEntry],
 
 
 def _copy_entries_to_repo(entries: list[DotfileEntry], home: str,
-                          repo_path: str) -> list[str]:
+                          repo_path: str,
+                          targets: list[str] | None = None) -> list[str]:
+    """Copy enabled entries into the repo; `targets` collects the repo paths written."""
     details: list[str] = []
+    layout = detect_layout(repo_path)
     for entry in entries:
         if not entry.enabled:
             continue
 
         src = entry.path
         rel = os.path.relpath(src, home)
-        dest = os.path.join(repo_path, rel)
+        target = repo_rel(repo_path, rel, layout)
+        dest = os.path.join(repo_path, target)
 
         try:
             if entry.is_directory and os.path.isdir(src):
@@ -182,10 +196,14 @@ def _copy_entries_to_repo(entries: list[DotfileEntry], home: str,
                 shutil.copytree(src, dest, dirs_exist_ok=True,
                                 ignore_dangling_symlinks=True)
                 details.append(f"+ {rel}/")
+                if targets is not None:
+                    targets.append(target)
             elif os.path.isfile(src):
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 shutil.copy2(src, dest)
                 details.append(f"+ {rel}")
+                if targets is not None:
+                    targets.append(target)
         except (PermissionError, OSError) as e:
             details.append(f"! {rel}: {e}")
     return details
@@ -220,32 +238,48 @@ def pull_dotfiles() -> SyncStatus:
     )
 
 
+def pull_preview(repo_path: str) -> tuple[list[str], list[str]]:
+    """What a pull would do: (files that differ from home, files home lacks).
+
+    Paths are relative to the home folder; files identical to the repo's are left out.
+    """
+    home = str(Path.home())
+    overwrite: list[str] = []
+    new: list[str] = []
+    for repo_rel_path, home_rel in repo_files(repo_path):
+        dest = os.path.join(home, home_rel)
+        if not os.path.exists(dest):
+            new.append(home_rel)
+        elif not _same_file(os.path.join(repo_path, repo_rel_path), dest):
+            overwrite.append(home_rel)
+    return overwrite, new
+
+
+def _same_file(a: str, b: str) -> bool:
+    try:
+        return filecmp.cmp(a, b, shallow=False)
+    except OSError:
+        return False
+
+
 def _copy_repo_to_home(repo_path: str, home: str) -> list[str]:
     details: list[str] = []
-    skip_files = {"dfm_manifest.json", "README.md", "LICENSE", ".gitignore"}
-    for root, dirs, files in os.walk(repo_path):
-        if ".git" in root.split(os.sep):
+    for repo_rel_path, home_rel in repo_files(repo_path):
+        src = os.path.join(repo_path, repo_rel_path)
+        dest = os.path.join(home, home_rel)
+        if os.path.exists(dest) and _same_file(src, dest):
             continue
-        dirs[:] = [d for d in dirs if d != ".git"]
 
-        for fname in files:
-            if fname in skip_files:
-                continue
+        try:
+            if os.path.exists(dest):
+                from dfm.core.backup import create_backup
+                create_backup(dest, reason="pull")
 
-            src = os.path.join(root, fname)
-            rel = os.path.relpath(src, repo_path)
-            dest = os.path.join(home, rel)
-
-            try:
-                if os.path.exists(dest):
-                    from dfm.core.backup import create_backup
-                    create_backup(dest, reason="pull")
-
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                shutil.copy2(src, dest)
-                details.append(f"< {rel}")
-            except (PermissionError, OSError) as e:
-                details.append(f"! {rel}: {e}")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(src, dest)
+            details.append(f"< {home_rel}")
+        except (PermissionError, OSError) as e:
+            details.append(f"! {home_rel}: {e}")
     return details
 
 
@@ -300,6 +334,7 @@ def get_repo_status() -> dict:
         "branch": "",
         "clean": True,
         "last_commit": "",
+        "layout": "",
         "gh_available": is_gh_available(),
         "gh_authenticated": False,
         "username": "",
@@ -315,6 +350,7 @@ def get_repo_status() -> dict:
         return info
 
     info["exists"] = True
+    info["layout"] = detect_layout(repo_path)
     info["gh_authenticated"] = is_gh_authenticated()
     if info["gh_authenticated"]:
         info["username"] = get_gh_username()
@@ -339,3 +375,84 @@ def get_repo_status() -> dict:
         pass
 
     return info
+
+
+def get_remote_url() -> str:
+    """The configured repo's `origin` URL, or "" when there is none."""
+    repo_path = get_repo_path()
+    if not repo_path or not os.path.isdir(os.path.join(repo_path, ".git")):
+        return ""
+    try:
+        r = run_git(["remote", "get-url", "origin"], cwd=repo_path)
+    except subprocess.TimeoutExpired:
+        return ""
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+# Where people usually keep a dotfiles clone, most likely first.
+_COMMON_LOCATIONS = (".dotfiles", "dotfiles", ".config/dotfiles", "Documents/dotfiles")
+
+
+def find_existing_repos() -> list[str]:
+    """Git clones in the usual places, to offer as a starting point."""
+    home = Path.home()
+    return [str(home / rel) for rel in _COMMON_LOCATIONS
+            if (home / rel / ".git").exists()]
+
+
+def inspect_repo(path: str) -> SyncStatus:
+    """Check that `path` is the root of a git clone DFM can sync with.
+
+    On success `details` holds a summary: remote, branch, layout, file count,
+    uncommitted changes. Nothing is changed.
+    """
+    path = os.path.realpath(os.path.expanduser(path or ""))
+    if not os.path.isdir(path):
+        return SyncStatus(success=False, message=f"{path} is not a folder.")
+
+    try:
+        top = run_git(["rev-parse", "--show-toplevel"], cwd=path)
+    except FileNotFoundError:
+        return SyncStatus(success=False, message="git was not found.")
+    except subprocess.TimeoutExpired:
+        return SyncStatus(success=False, message="git did not answer.")
+    if top.returncode != 0:
+        return SyncStatus(success=False,
+                          message=f"{path} is not a git repository.")
+    root = os.path.realpath(top.stdout.strip())
+    if root != path:
+        return SyncStatus(
+            success=False,
+            message=f"{path} is inside a repository, not its root. "
+                    f"Choose {root} instead.")
+
+    try:
+        remote = run_git(["remote", "get-url", "origin"], cwd=path)
+        branch = run_git(["branch", "--show-current"], cwd=path)
+        dirty = run_git(["status", "--porcelain"], cwd=path)
+    except subprocess.TimeoutExpired:
+        return SyncStatus(success=False, message="git did not answer.")
+
+    layout = detect_layout(path)
+    details = [
+        "Remote: " + (remote.stdout.strip() if remote.returncode == 0
+                      else "none (you can commit, but not push or pull)"),
+        "Branch: " + (branch.stdout.strip() or "(detached)"),
+        f"Layout: {layout}" + (" (one folder per program)" if layout == "stow"
+                               else " (files laid out like your home folder)"),
+        f"Dotfiles in it: {len(repo_files(path, layout))}",
+    ]
+    if dirty.stdout.strip():
+        details.append("It has uncommitted changes; DFM will leave them alone.")
+    return SyncStatus(success=True, message=path, details=details)
+
+
+def use_existing_repo(path: str) -> SyncStatus:
+    """Make an already-cloned repo the dotfiles repo. Needs no network or `gh`."""
+    checked = inspect_repo(path)
+    if not checked.success:
+        return checked
+    save_repo_path(checked.message)
+    return SyncStatus(success=True,
+                      message=f"Using the existing repository at {checked.message}",
+                      details=checked.details)

@@ -87,7 +87,8 @@ def repo_diff_summary(repo_path: str,
         else:
             rel = os.path.basename(config_path)
 
-        repo_file = os.path.join(repo_path, rel)
+        from dfm.core.github_sync.layout import repo_rel
+        repo_file = os.path.join(repo_path, repo_rel(repo_path, rel))
 
         if not os.path.isfile(repo_file):
             results.append({

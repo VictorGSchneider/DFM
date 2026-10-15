@@ -6,6 +6,21 @@ All notable changes to DFM are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Use an existing local repo** (GitHub Sync > Setup): point DFM at a dotfiles repo you
+  already cloned, with its data, on any git host. DFM shows the remote, branch, layout and
+  how many dotfiles it holds before linking it; no GitHub login is needed unless the remote
+  is on GitHub.
+- Repos laid out like your home folder (`.bashrc`, `.config/...`) and GNU Stow-style repos
+  (`zsh/.zshrc`, one folder per program) are both understood.
+
+### Changed
+- Push stages and commits only the files DFM copied, so unfinished work in the repo is
+  left alone (it used to `git add -A`).
+- Pull installs only dotfiles (names starting with a dot) and skips files identical to the
+  ones in your home folder; scripts, READMEs and CI files in the repo no longer land in
+  `~`.
+
 ## [2.1.0] - 2026-10-15
 
 ### Added

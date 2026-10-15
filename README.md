@@ -143,9 +143,24 @@ Sync your dotfiles with GitHub using the community-standard dedicated repo appro
 - **Pull**: pulls from GitHub and installs to home (existing files are backed up)
 - **Create Repo**: creates a new private `dotfiles` repo on GitHub and clones it locally
 - **Clone Repo**: clones your existing dotfiles repo from GitHub
+- **Use an Existing Local Repo**: already have your dotfiles in a cloned git repo? Choose its folder and DFM syncs with it as is, on any git host (the `gh` login is only needed for GitHub remotes)
 - **Share as Gist**: upload an individual dotfile as a GitHub Gist (secret or public) for quick sharing
 
 All GitHub features use the `gh` CLI for authentication, so no tokens are stored by DFM.
+
+#### Using a repo you already have
+
+Two layouts are recognised:
+
+| Layout | Looks like | Push puts files | Pull installs |
+|---|---|---|---|
+| mirror (what DFM creates) | `.bashrc`, `.config/hypr/hyprland.conf` | at the same path as in `~` | every dotfile in the repo |
+| stow | `zsh/.zshrc`, `hypr/.config/hypr/hyprland.conf` | in the package that already tracks them; new files go in a `dfm/` package | the dotfiles of every package |
+
+Your repo is respected: push stages and commits only the files DFM copied (your other
+uncommitted work stays untouched), and pull only installs entries whose names start with a dot,
+so `install.sh`, `README.md`, `scripts/` or `.github/` never end up in your home folder.
+Anything pull replaces is backed up first.
 
 ### Import / Export
 
