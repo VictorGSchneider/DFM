@@ -8,7 +8,7 @@ from dfm.core.parser.types import (
     BOOL_FALSE,
 )
 from dfm.core.parser.detect import detect_format as _detect_format
-from dfm.core.parser.infer import infer_field_type, make_display_name
+from dfm.core.parser.infer import infer_field_type
 from dfm.core.parser.locate import LOCATORS
 from dfm.core.parser.handlers import (
     parse_ini,

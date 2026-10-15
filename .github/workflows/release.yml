@@ -1,0 +1,39 @@
+name: Release
+
+# Push a tag like v2.1.0 (after bumping dfm/__init__.py and CHANGELOG.md) to publish it.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pyyaml setuptools
+      - name: The tag matches the version in the code
+        run: |
+          version=$(python -c "import dfm; print(dfm.__version__)")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match dfm.__version__ ($version)"
+            exit 1
+          fi
+      - name: Tests
+        run: python -m unittest discover -s tests -t .
+      - name: Release notes from CHANGELOG.md
+        run: python scripts/release_notes.py "$GITHUB_REF_NAME" > notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "DFM ${GITHUB_REF_NAME#v}" \
+            --notes-file notes.md \
+            --verify-tag

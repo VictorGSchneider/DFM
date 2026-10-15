@@ -2,10 +2,10 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gio, GLib, Pango
+from gi.repository import Gtk, Pango
 from enum import Enum, auto
 from dfm.core.scanner import DotfileEntry
-from dfm.core.notes import get_favorites, get_note
+from dfm.core.notes import get_favorites
 
 
 class SortMode(Enum):
