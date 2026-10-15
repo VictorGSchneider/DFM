@@ -10,6 +10,8 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
 from dfm.ui.markup import esc
+from dfm.ui.viewer import TextViewerDialog
+from dfm.ui.window_dialogs.backup_history import BackupHistoryDialog
 from dfm.core.scanner import DotfileEntry
 from dfm.core.backup import get_backups, restore_backup
 from dfm.core.validator import validate_file
@@ -87,29 +89,8 @@ def _on_export_finish(dialog, result, entry):
 def _on_view_raw(btn):
     entry = btn._entry
     config_path = entry.get_config_path() or entry.path
-    try:
-        with open(config_path, "r", errors="replace") as f:
-            content = f.read()
-    except OSError:
-        content = "(unable to read file)"
-
-    dialog = Adw.Dialog()
-    dialog.set_title(f"Raw — {entry.display_name}")
-    dialog.set_content_width(700)
-    dialog.set_content_height(500)
-
-    toolbar_view = Adw.ToolbarView()
-    toolbar_view.add_top_bar(Adw.HeaderBar())
-
-    scrolled = Gtk.ScrolledWindow(vexpand=True, hexpand=True)
-    tv = Gtk.TextView(editable=False, monospace=True,
-                      left_margin=12, right_margin=12,
-                      top_margin=12, bottom_margin=12)
-    tv.get_buffer().set_text(content)
-    scrolled.set_child(tv)
-    toolbar_view.set_content(scrolled)
-    dialog.set_child(toolbar_view)
-    dialog.present(btn._builder._window)
+    TextViewerDialog(f"Raw — {entry.display_name}", str(config_path)).present(
+        btn._builder._window)
 
 
 def _on_share_gist(btn):
@@ -318,6 +299,14 @@ def build_backup_section(builder, entry: DotfileEntry) -> Gtk.Widget:
         group.add(row)
         return group
 
+    all_btn = Gtk.Button(label=f"All {len(backups)} backups & diffs…",
+                         valign=Gtk.Align.CENTER)
+    all_btn.add_css_class("flat")
+    all_btn._entry = entry
+    all_btn._builder = builder
+    all_btn.connect("clicked", _on_open_history)
+    group.set_header_suffix(all_btn)
+
     for backup in backups[:5]:
         subtitle_parts = []
         if backup.size > 0:
@@ -345,6 +334,22 @@ def build_backup_section(builder, entry: DotfileEntry) -> Gtk.Widget:
         group.add(row)
 
     return group
+
+
+def _on_open_history(btn):
+    entry = btn._entry
+    window = btn._builder._window
+    config_path = str(entry.get_config_path() or entry.path)
+
+    def restored() -> None:
+        monitor = getattr(window, "_monitor", None)
+        if monitor is not None:
+            monitor.update_state(config_path)
+        if hasattr(window, "_scan_and_populate"):
+            window._scan_and_populate()  # show the restored values
+
+    BackupHistoryDialog(window, config_path, entry.display_name,
+                        on_restored=restored).present()
 
 
 def _on_restore_backup(btn):

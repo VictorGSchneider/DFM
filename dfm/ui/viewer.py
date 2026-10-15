@@ -152,7 +152,7 @@ class TextViewerDialog(Adw.Dialog):
         try:
             with open(self.file_path, "r", errors="replace") as f:
                 content = f.read()
-        except (PermissionError, FileNotFoundError) as e:
+        except OSError as e:
             content = f"Error reading file: {e}"
 
         buf = self.text_view.get_buffer()

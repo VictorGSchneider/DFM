@@ -319,27 +319,37 @@ def _check_deprecated_patterns(fa: FileAnalysis, lines: list[str],
 def _check_permissions(fa: FileAnalysis, file_path: str) -> None:
     """Check for insecure permissions on sensitive files."""
     basename = os.path.basename(file_path).lower()
-    sensitive = {".netrc", ".pgpass", ".env", "credentials", "secrets",
-                 ".ssh/config"}
+    parts = Path(file_path).parts
 
-    is_sensitive = basename in sensitive or any(
-        s in file_path.lower() for s in ("/ssh/", "credentials", "secrets")
+    in_ssh = any(p.lower() in (".ssh", "ssh") for p in parts[:-1])
+    is_private_key = in_ssh and (
+        basename.startswith("id_") and not basename.endswith(".pub")
+        or basename.endswith(".pem")
     )
-
-    if not is_sensitive:
-        return
+    is_secret = basename in {".netrc", ".pgpass", ".env", "credentials", "secrets"} \
+        or any(s in file_path.lower() for s in ("credentials", "secrets"))
 
     try:
         mode = os.stat(file_path).st_mode
-        if mode & stat.S_IROTH or mode & stat.S_IWOTH:
-            fa.issues.append(Issue(
-                severity=IssueSeverity.WARNING,
-                title="Insecure permissions",
-                detail=f"Sensitive file is world-readable/writable "
-                       f"(mode {oct(mode)[-3:]})",
-                file_path=file_path,
-                category="security",
-                fix_hint=f"chmod 600 {file_path}",
-            ))
     except OSError:
-        pass
+        return
+
+    if is_private_key or (is_secret and not in_ssh):
+        # Nobody but the owner should be able to read these (keys: not even the group)
+        others = stat.S_IROTH | stat.S_IWOTH
+        if mode & (others | stat.S_IRGRP | stat.S_IWGRP if is_private_key else others):
+            _insecure(fa, file_path, mode, "accessible by other users")
+    elif in_ssh and mode & (stat.S_IWGRP | stat.S_IWOTH):
+        # ssh refuses a config that others can write; being readable is normal
+        _insecure(fa, file_path, mode, "writable by other users")
+
+
+def _insecure(fa: FileAnalysis, file_path: str, mode: int, why: str) -> None:
+    fa.issues.append(Issue(
+        severity=IssueSeverity.WARNING,
+        title="Insecure permissions",
+        detail=f"Sensitive file is {why} (mode {oct(mode)[-3:]})",
+        file_path=file_path,
+        category="security",
+        fix_hint=f"chmod 600 {file_path}",
+    ))

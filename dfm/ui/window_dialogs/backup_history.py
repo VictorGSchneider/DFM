@@ -17,8 +17,10 @@ from dfm.ui.window_dialogs.diff_viewer import DiffViewerDialog
 class BackupHistoryDialog(StatusMixin):
     """Show backup history for a dotfile with restore and diff options."""
 
-    def __init__(self, parent_window, file_path: str, entry_name: str) -> None:
+    def __init__(self, parent_window, file_path: str, entry_name: str,
+                 on_restored=None) -> None:
         self.parent_window = parent_window
+        self.on_restored = on_restored  # called after a successful restore
         self.file_path = file_path
         self.entry_name = entry_name
         self.dialog = make_dialog(
@@ -158,6 +160,8 @@ class BackupHistoryDialog(StatusMixin):
         if restore_backup(backup):
             self._show_status(f"Restored from backup ({backup.display_time})")
             self._refresh_backups()
+            if self.on_restored is not None:
+                self.on_restored()
         else:
             self._show_status("Failed to restore backup")
 

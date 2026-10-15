@@ -8,6 +8,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib
 
 from dfm.core.scanner import scan_dotfiles, carry_over_enabled, DotfileEntry
+from dfm.core.state import apply_saved_enabled, remember_enabled
 from dfm.core.monitor import DotfileMonitor
 from dfm.ui.window_sidebar import SidebarManager
 from dfm.ui.window_all_dotfiles import AllDotfilesPage
@@ -29,6 +30,7 @@ class DfmWindow(Adw.ApplicationWindow):
 
         self.dotfiles: list[DotfileEntry] = []
         self.current_entry: DotfileEntry | None = None
+        self._persist_pending = False
 
         self._monitor = DotfileMonitor(poll_interval=3.0)
         self._monitor.on_change(self._on_file_changed_external)
@@ -173,7 +175,9 @@ class DfmWindow(Adw.ApplicationWindow):
         viewing = self.content_stack.get_visible_child_name()
         current = self.current_entry
         self.dotfiles = scan_dotfiles()
-        carry_over_enabled(self.dotfiles, previous)
+        apply_saved_enabled(self.dotfiles)          # choices from earlier runs
+        carry_over_enabled(self.dotfiles, previous)  # choices made this run win
+        remember_enabled(self.dotfiles)
 
         while True:
             child = self.content_stack.get_first_child()
@@ -244,6 +248,14 @@ class DfmWindow(Adw.ApplicationWindow):
     def _on_dotfile_toggled(self, entry: DotfileEntry, new_state: bool) -> None:
         """Handle dotfile toggle from All Dotfiles page."""
         entry.enabled = new_state
+        if not self._persist_pending:  # a bulk toggle calls this once per entry
+            self._persist_pending = True
+            GLib.idle_add(self._persist_enabled)
+
+    def _persist_enabled(self) -> bool:
+        self._persist_pending = False
+        remember_enabled(self.dotfiles)
+        return False
 
     # ── File Monitor ────────────────────────────────────────────────
 

@@ -91,7 +91,8 @@ Built-in viewer for inspecting dotfiles without leaving the app:
 
 - Automatic backup before every edit
 - Versioned history stored in `~/.local/share/dfm/backups/`
-- Restore any previous version from the UI
+- Restore any previous version from the UI, with a diff against the current file
+- Which dotfiles you switched off is remembered between runs (`~/.local/share/dfm/state.json`)
 
 ### Profiles & Templates
 
@@ -272,6 +273,7 @@ dfm/
 │   ├── distro.py          # Package-manager abstraction (apt, dnf, pacman, ...)
 │   ├── exporter.py        # Import/export as .tar.gz archives
 │   ├── runtime.py         # Minimum GTK / libadwaita check
+│   ├── state.py           # Remembers which dotfiles you switched off
 │   └── github_sync/       # GitHub repo sync and gist sharing via gh CLI
 └── ui/
     ├── window.py           # Main window with sidebar + content panel
@@ -279,8 +281,9 @@ dfm/
     ├── window_config_page*.py # Smart config editing page (fields, sections, handlers)
     ├── window_all_dotfiles*.py # All Dotfiles overview page
     ├── window_analyzer.py  # Analyzer & Debugger diagnostics page
-    ├── window_dialogs/     # Dialogs (profiles, templates, wizard, ...)
+    ├── window_dialogs/     # Dialogs (profiles, templates, wizard, backup history, diff)
     ├── window_sync*.py     # GitHub sync UI (slow work runs in a worker thread)
+    ├── viewer.py           # Raw text viewer with syntax highlighting
     ├── tasks.py            # run_async: keep git/gh/network off the UI thread
     └── markup.py           # esc(): escape text before it reaches Adw row titles
 tests/                      # unittest suite for dfm.core
