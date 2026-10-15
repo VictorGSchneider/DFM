@@ -244,6 +244,26 @@ separator {
     border: 1px solid alpha(@stoa_terracotta, 0.7);
 }
 
+/* Missing dependencies: the fix, in one box */
+.missing-deps {
+    padding: 14px 16px;
+    background-color: alpha(@stoa_terracotta, 0.08);
+    border: 1px solid alpha(@stoa_terracotta, 0.45);
+}
+
+/* A plain terminal: dark, monospace, nothing else */
+.terminal-box {
+    background-color: #14110e;
+    border: 1px solid alpha(@stoa_stone, 0.6);
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.terminal-box label {
+    color: @stoa_fg;
+    font-family: monospace;
+}
+
 .analyzer-card-clear {
     border: 1px solid alpha(@stoa_olive, 0.35);
 }

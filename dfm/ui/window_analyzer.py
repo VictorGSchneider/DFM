@@ -176,100 +176,93 @@ class AnalyzerPage:
     # ── Missing dependencies ─────────────────────────────────────────
 
     def _build_missing_deps(self, analysis: FullAnalysis) -> Gtk.Widget:
-        """One item, styled like a conflict, carrying the install actions."""
-        names = analysis.missing_dependencies
+        """Everything needed to fix missing packages, in one box: what, how, go."""
+        count = len(analysis.missing_packages)
         command = install_command(analysis.missing_packages)
 
         group = Adw.PreferencesGroup(title="Missing Dependencies")
-        row = Adw.ActionRow()
-        count = len(analysis.missing_packages)
-        row.set_title(f"{count} required package{'s' if count != 1 else ''} not installed")
-        detail = ", ".join(names)
-        if command:
-            detail += f"\nFix: {command}"
-        row.set_subtitle(esc(detail))
-        row.set_subtitle_lines(0)  # show the whole list and the command
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        box.add_css_class("card")
+        box.add_css_class("missing-deps")
 
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         icon = Gtk.Image.new_from_icon_name(_SEV_ICON[IssueSeverity.ERROR])
         icon.add_css_class(_SEV_CSS[IssueSeverity.ERROR])
-        icon.set_valign(Gtk.Align.CENTER)
-        row.add_prefix(icon)
+        header.append(icon)
+        title = Gtk.Label(
+            label=f"{count} required package{'s' if count != 1 else ''} not installed",
+            xalign=0, hexpand=True,
+        )
+        title.add_css_class("heading")
+        header.append(title)
+        box.append(header)
 
-        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
-                          valign=Gtk.Align.CENTER)
+        packages = Gtk.Label(label=", ".join(analysis.missing_dependencies),
+                             xalign=0, wrap=True, selectable=True)
+        packages.add_css_class("dim-label")
+        box.append(packages)
+
+        # The command, in a plain terminal-looking box (or the names, if we can't
+        # build a command because the package manager isn't recognised)
+        to_copy = command or " ".join(analysis.missing_packages)
+        terminal_box = Gtk.Box()
+        terminal_box.add_css_class("terminal-box")
+        terminal_text = Gtk.Label(label=to_copy, xalign=0, wrap=True, selectable=True,
+                                  wrap_mode=Pango.WrapMode.WORD_CHAR, hexpand=True)
+        terminal_text.add_css_class("monospace")
+        terminal_box.append(terminal_text)
+        box.append(terminal_box)
+
+        notice = Gtk.Label(
+            label=("A terminal will open and run this command. "
+                   "You'll type your password there, not here."
+                   if command else
+                   "DFM doesn't recognise this system's package manager. "
+                   "Install these packages with yours."),
+            xalign=0, wrap=True,
+        )
+        notice.add_css_class("dim-label")
+        notice.add_css_class("caption")
+        box.append(notice)
+
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8,
+                          halign=Gtk.Align.END)
+        copy_btn = Gtk.Button(label="Copy Command" if command else "Copy Package Names")
+        copy_btn.connect("clicked", lambda _b: (self._copy(to_copy),
+                                                self._say("Copied to the clipboard")))
+        buttons.append(copy_btn)
         if command:
-            copy_btn = Gtk.Button(icon_name="edit-copy-symbolic",
-                                  tooltip_text="Copy the install command")
-            copy_btn.add_css_class("flat")
-            copy_btn.connect("clicked", lambda _b: (self._copy(command),
-                                                    self._say("Copied to the clipboard")))
-            actions.append(copy_btn)
-        install_btn = Gtk.Button(label="Install…" if command else "How to install…")
-        install_btn.add_css_class("suggested-action")
-        install_btn.connect("clicked", self._on_install_clicked, analysis)
-        actions.append(install_btn)
-        row.add_suffix(actions)
+            install_btn = Gtk.Button(label="Open Terminal & Install")
+            install_btn.add_css_class("suggested-action")
+            install_btn.connect("clicked", lambda _b: self._run_install(command))
+            buttons.append(install_btn)
+        box.append(buttons)
 
-        group.add(row)
+        group.add(box)
         return group
 
     # ── Installing missing packages ──────────────────────────────────
 
-    def _on_install_clicked(self, button: Gtk.Button, analysis: FullAnalysis) -> None:
-        names = analysis.missing_dependencies
-        command = install_command(analysis.missing_packages)
-        listing = "\n".join(f"  •  {n}" for n in names)
-
-        dialog = Adw.AlertDialog()
-        dialog.add_response("cancel", "Cancel")
-        dialog.set_close_response("cancel")
-        if command:
-            dialog.set_heading("Install missing packages?")
-            dialog.set_body(
-                "Your dotfiles need these packages, which aren't installed:\n\n"
-                f"{listing}\n\n"
-                f"A terminal will open and run:\n    {command}\n\n"
-                "You'll type your password in that terminal, not here."
-            )
-            dialog.add_response("copy", "Copy Command")
-            dialog.add_response("install", "Open Terminal & Install")
-            dialog.set_response_appearance("install", Adw.ResponseAppearance.SUGGESTED)
-            dialog.set_default_response("install")
-        else:
-            dialog.set_heading("Install missing packages")
-            dialog.set_body(
-                "DFM doesn't recognise this system's package manager, so it can't "
-                "build an install command. Install these with your package "
-                f"manager:\n\n{listing}"
-            )
-            command = " ".join(analysis.missing_packages)
-            dialog.add_response("copy", "Copy Package Names")
-        dialog.connect("response", self._on_install_response, command)
-        dialog.present(button)
-
-    def _on_install_response(self, dialog, response: str, command: str) -> None:
-        if response == "copy":
-            self._copy(command)
-            self._say("Copied to the clipboard")
-        elif response == "install":
-            directory = tempfile.mkdtemp(prefix="dfm-install-")
-            done_file = os.path.join(directory, "status")
-            if open_terminal(command, done_file):
-                self._watch_install(done_file, directory)
-                if self._on_install_started:
-                    self._on_install_started()
-                return
-            shutil.rmtree(directory, ignore_errors=True)
-            # No terminal emulator found: hand over the command instead
-            self._copy(command)
-            alert = Adw.AlertDialog()
-            alert.set_heading("No terminal found")
-            alert.set_body(
-                "DFM couldn't find a terminal emulator to open. The command was "
-                f"copied to your clipboard — paste it in any terminal:\n\n    {command}"
-            )
-            alert.add_response("ok", "OK")
-            alert.present(self._content_box)
+    def _run_install(self, command: str) -> None:
+        """Open a terminal running `command`; the window rescans when it ends."""
+        directory = tempfile.mkdtemp(prefix="dfm-install-")
+        done_file = os.path.join(directory, "status")
+        if open_terminal(command, done_file):
+            self._watch_install(done_file, directory)
+            if self._on_install_started:
+                self._on_install_started()
+            return
+        shutil.rmtree(directory, ignore_errors=True)
+        # No terminal emulator found: hand over the command instead
+        self._copy(command)
+        alert = Adw.AlertDialog()
+        alert.set_heading("No terminal found")
+        alert.set_body(
+            "DFM couldn't find a terminal emulator to open. The command was "
+            f"copied to your clipboard — paste it in any terminal:\n\n    {command}"
+        )
+        alert.add_response("ok", "OK")
+        alert.present(self._content_box)
 
     def _watch_install(self, done_file: str, directory: str) -> None:
         """Tell the window when the terminal's install ends (it writes `done_file`).
