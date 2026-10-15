@@ -1,7 +1,6 @@
 """Dotfile wizard - generate base configs for apps that don't have one."""
 
 import os
-from pathlib import Path
 from dataclasses import dataclass
 
 

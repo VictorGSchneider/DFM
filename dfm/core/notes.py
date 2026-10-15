@@ -1,7 +1,6 @@
 """Notes and tags storage per dotfile."""
 
 import json
-import os
 from pathlib import Path
 from dataclasses import dataclass, field
 

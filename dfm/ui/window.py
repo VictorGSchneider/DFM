@@ -7,6 +7,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio, GLib
 
+from dfm import __version__
 from dfm.core.scanner import scan_dotfiles, carry_over_enabled, DotfileEntry
 from dfm.core.distro import forget_installed_cache
 from dfm.core.state import apply_saved_enabled, remember_enabled
@@ -341,7 +342,7 @@ class DfmWindow(Adw.ApplicationWindow):
         """Show the about dialog."""
         about = Adw.AboutDialog()
         about.set_application_name("DFM")
-        about.set_version("2.0.0")
+        about.set_version(__version__)
         about.set_developer_name("DFM Contributors")
         about.set_license_type(Gtk.License.GPL_3_0)
         about.set_comments(

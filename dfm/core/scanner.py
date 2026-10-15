@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 # Well-known dotfiles and their descriptions

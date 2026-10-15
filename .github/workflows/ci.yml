@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pyflakes
+      - run: python -m pyflakes dfm tests uitests scripts setup.py
+
+  tests:
+    name: Unit tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # dfm.core needs no GTK: only the parsers' optional libraries
+      - run: python -m pip install pyyaml tomli setuptools
+      - run: python -m unittest discover -s tests -t . -v
+
+  ui:
+    name: GTK smoke tests
+    runs-on: ubuntu-24.04   # GTK 4.14 / libadwaita 1.5: the minimum DFM supports
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK and a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-yaml gir1.2-gtk-4.0 gir1.2-adw-1 \
+            librsvg2-common adwaita-icon-theme fonts-dejavu-core xvfb git
+      # The system Python, because PyGObject comes from apt
+      - name: Run the app's pages and dialogs
+        env:
+          GTK_A11Y: none
+        run: xvfb-run -a -s "-screen 0 1280x900x24" python3 -m unittest discover -s uitests -t . -v
+
+  package:
+    name: Build the package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - name: The wheel holds only the dfm package
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          tops = {n.split("/")[0] for n in zipfile.ZipFile(wheel).namelist()}
+          bad = {t for t in tops if not t.startswith("dfm")}
+          assert not bad, f"unexpected top-level entries in the wheel: {bad}"
+          print("wheel OK:", wheel, sorted(tops))
+          PY

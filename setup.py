@@ -1,10 +1,23 @@
+import re
+from pathlib import Path
+
 from setuptools import setup, find_packages
+
+# Read the version without importing the package (that would need GTK)
+VERSION = re.search(
+    r'^__version__ = "([^"]+)"', Path(__file__).with_name("dfm").joinpath("__init__.py").read_text(),
+    re.MULTILINE,
+).group(1)
 
 setup(
     name="dfm",
-    version="2.0.0",
+    version=VERSION,
     description="A GUI for managing dotfiles on Linux",
-    packages=find_packages(),
+    long_description=Path(__file__).with_name("README.md").read_text(encoding="utf-8"),
+    long_description_content_type="text/markdown",
+    url="https://github.com/VictorGSchneider/DFM",
+    license="GPL-3.0-or-later",
+    packages=find_packages(include=["dfm", "dfm.*"]),
     python_requires=">=3.10",
     install_requires=[
         "PyGObject>=3.42.0",
@@ -13,7 +26,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "dfm=dfm.main:main",
+            "dfm=dfm.cli:main",
         ],
     },
 )

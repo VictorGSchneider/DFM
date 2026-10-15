@@ -4,7 +4,6 @@ import os
 import time
 import threading
 from dataclasses import dataclass
-from pathlib import Path
 
 
 @dataclass

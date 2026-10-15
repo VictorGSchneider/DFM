@@ -10,10 +10,9 @@ codebase are *canonical ids* (Arch names, historically); `package_name()`
 translates one to whatever the local package manager calls it.
 """
 
-import os
 import shutil
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 # How a query proves a package is installed.

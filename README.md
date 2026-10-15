@@ -1,5 +1,7 @@
 # DFM - Dotfile Manager
 
+[![CI](https://github.com/VictorGSchneider/DFM/actions/workflows/ci.yml/badge.svg)](https://github.com/VictorGSchneider/DFM/actions/workflows/ci.yml)
+
 A GTK4/Adwaita GUI application for managing dotfiles on Linux.
 
 **DFM does not move or centralize your dotfiles.** Each config file stays in its original location (`~/.bashrc`, `~/.config/hypr/hyprland.conf`, etc.). DFM detects them, lets you edit in place through a friendly GUI, and creates automatic backups before any change.
@@ -236,6 +238,8 @@ dfm
 # Or install into a venv / --user site
 pip install -e .
 dfm
+
+dfm --version   # prints the installed version
 ```
 
 An XDG desktop entry is shipped at `data/dfm.desktop` — symlink or copy it
@@ -296,6 +300,31 @@ python -m unittest discover -s tests -t .
 ```
 
 The suite covers `dfm.core` only and needs no display, GTK, or network.
+
+The real app (GTK4 + libadwaita) is exercised separately under Xvfb:
+
+```bash
+xvfb-run -a python3 -m unittest discover -s uitests -t .
+```
+
+CI (`.github/workflows/ci.yml`) runs lint (pyflakes), the unit suite on
+Python 3.10–3.13, the UI tests, and a package build on every push and PR.
+
+## Releases
+
+The version lives in one place: `dfm/__version__` (`dfm/__init__.py`).
+`setup.py`, `dfm --version` and the About dialog all read it.
+
+To cut a release:
+
+1. Bump `__version__` in `dfm/__init__.py`.
+2. Move the `[Unreleased]` notes in `CHANGELOG.md` under a new
+   `## [X.Y.Z] - YYYY-MM-DD` heading and update the compare links.
+3. Merge to `main`, then tag it: `git tag -a vX.Y.Z -m "DFM X.Y.Z" && git push origin vX.Y.Z`.
+
+Pushing the tag runs `.github/workflows/release.yml`, which checks the tag
+matches `__version__`, runs the tests and publishes a GitHub Release using
+the matching CHANGELOG section. See [CHANGELOG.md](CHANGELOG.md).
 
 ## How It Works
 

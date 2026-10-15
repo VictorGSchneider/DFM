@@ -6,7 +6,7 @@ import re
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gio, GLib, Gdk, Pango
+from gi.repository import Gtk, Adw, GLib, Gdk, Pango
 
 from dfm.core.parser.detect import detect_format
 
