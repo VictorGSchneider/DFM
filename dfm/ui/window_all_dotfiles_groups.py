@@ -9,7 +9,7 @@ from dfm.ui.markup import esc
 from dfm.core.scanner import DotfileEntry
 from dfm.core.conflicts import detect_conflicts
 from dfm.ui.window_sidebar import (
-    SortMode, SORT_LABELS, CATEGORY_ICONS,
+    SortMode, SORT_LABELS,
     _group_by_category, _sort_entries,
 )
 
@@ -30,21 +30,10 @@ def _build_group(page, category: str, entries: list[DotfileEntry]) -> None:
     total_count = len(entries)
 
     group = Adw.PreferencesGroup()
-    icon_name = CATEGORY_ICONS.get(category, "application-x-executable-symbolic")
 
     header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
     header_box.set_margin_top(4)
     header_box.set_margin_bottom(4)
-
-    cat_icon = Gtk.Image.new_from_icon_name(icon_name)
-    cat_icon.add_css_class("dim-label")
-    header_box.append(cat_icon)
-
-    title_label = Gtk.Label(label=category)
-    title_label.add_css_class("heading")
-    title_label.set_hexpand(True)
-    title_label.set_halign(Gtk.Align.START)
-    header_box.append(title_label)
 
     count_label = Gtk.Label(label=f"{enabled_count}/{total_count} enabled")
     count_label.add_css_class("dim-label")

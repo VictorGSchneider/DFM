@@ -71,6 +71,11 @@ def detect_conflicts(entries: list[DotfileEntry]) -> list[Conflict]:
             continue
 
         is_fish = "fish" in name_lower or "fish" in display_lower
+        # Within one file a later definition shadows an earlier one (that's the
+        # analyzer's duplicate-key check); only the effective value can conflict
+        # with another file.
+        file_env: dict[str, str] = {}
+        file_aliases: dict[str, str] = {}
         for line in content.splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -80,14 +85,17 @@ def detect_conflicts(entries: list[DotfileEntry]) -> list[Conflict]:
             if match is None and is_fish:
                 match = _FISH_ENV_PATTERN.match(line)
             if match:
-                env_vars.setdefault(match.group(1), []).append(
-                    (entry.display_name, _unquote(match.group(2))))
+                file_env[match.group(1)] = _unquote(match.group(2))
                 continue
 
             match = _ALIAS_PATTERN.match(line)
             if match:
-                aliases.setdefault(match.group(1), []).append(
-                    (entry.display_name, _unquote(match.group(2))))
+                file_aliases[match.group(1)] = _unquote(match.group(2))
+
+        for var_name, value in file_env.items():
+            env_vars.setdefault(var_name, []).append((entry.display_name, value))
+        for alias_name, value in file_aliases.items():
+            aliases.setdefault(alias_name, []).append((entry.display_name, value))
 
     # Check for conflicting env vars
     for var_name, definitions in env_vars.items():

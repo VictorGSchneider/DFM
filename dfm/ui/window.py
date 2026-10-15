@@ -328,5 +328,5 @@ class DfmWindow(Adw.ApplicationWindow):
             "Detect, configure, import/export, and sync your "
             "dotfiles with GitHub."
         )
-        about.set_application_icon("preferences-other")
+        about.set_application_icon("preferences-system-symbolic")
         about.present(self)

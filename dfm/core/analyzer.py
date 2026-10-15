@@ -6,6 +6,7 @@ import shlex
 import stat
 from pathlib import Path
 
+from dfm.core.parser.blocks import block_open, is_block_close
 from dfm.core.parser.detect import detect_format
 from dfm.core.scanner import DotfileEntry
 from dfm.core.analyzer_types import (
@@ -214,6 +215,7 @@ def _check_duplicate_keys(fa: FileAnalysis, lines: list[str],
     fmt = detect_format(file_path, "\n".join(lines))
     seen_keys: dict[tuple, list[int]] = {}
     section = ""
+    blocks: list[str] = []               # `name { ... }` blocks we are inside
     parents: list[tuple[int, str]] = []  # YAML-style nesting by indentation
 
     for i, line in enumerate(lines, 1):
@@ -222,6 +224,16 @@ def _check_duplicate_keys(fa: FileAnalysis, lines: list[str],
             continue
         if stripped.startswith("["):
             section = stripped  # [table] / [[array]] / [section]
+            parents = []
+            continue
+        name = block_open(stripped)
+        if name is not None:
+            blocks.append(name)
+            parents = []
+            continue
+        if is_block_close(stripped):
+            if blocks:
+                blocks.pop()
             parents = []
             continue
 
@@ -239,7 +251,7 @@ def _check_duplicate_keys(fa: FileAnalysis, lines: list[str],
 
         while parents and parents[-1][0] >= indent:
             parents.pop()
-        scope = (section, tuple(k for _, k in parents))
+        scope = (section, tuple(blocks), tuple(k for _, k in parents))
         parents.append((indent, key))
         seen_keys.setdefault((scope, key), []).append(i)
 

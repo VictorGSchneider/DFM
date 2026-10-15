@@ -30,8 +30,8 @@ CATEGORY_ICONS = {
     "Launchers": "system-search-symbolic",
     "Notifications": "preferences-system-notifications-symbolic",
     "Editors": "text-editor-symbolic",
-    "Media": "multimedia-video-player-symbolic",
-    "Appearance": "preferences-desktop-theme-symbolic",
+    "Media": "video-x-generic-symbolic",
+    "Appearance": "preferences-desktop-appearance-symbolic",
     "Development": "utilities-terminal-symbolic",
     "System": "preferences-system-symbolic",
 }

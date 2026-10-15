@@ -3,7 +3,7 @@
 import re
 
 _OPEN = re.compile(r"^([^=:;{}#]+?)\s*:?\s*\{\s*$")
-_CLOSE = re.compile(r"^\}\s*;?\s*$")
+_CLOSE = re.compile(r"^\}\s*[;,]?\s*$")
 
 
 def block_open(stripped: str) -> str | None:

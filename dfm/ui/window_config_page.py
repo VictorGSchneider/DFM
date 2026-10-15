@@ -5,6 +5,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Pango
 
+from dfm.ui.markup import esc
 from dfm.core.scanner import DotfileEntry
 from dfm.core.parser import parse_config
 from dfm.ui.window_sidebar import _categorize
@@ -37,9 +38,9 @@ class ConfigPageBuilder:
         box.append(build_actions(self, entry))
         box.append(build_validation(entry))
 
-        fields_group = Adw.PreferencesGroup(title="Configuration")
-        self._populate_fields(fields_group, entry)
-        box.append(fields_group)
+        fields_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        self._populate_fields(fields_box, entry)
+        box.append(fields_box)
 
         deps_widget = build_deps(entry)
         if deps_widget is not None:
@@ -82,19 +83,34 @@ class ConfigPageBuilder:
         title_box.append(title_inner)
         return title_box
 
-    def _populate_fields(self, container, entry: DotfileEntry):
+    def _populate_fields(self, container: Gtk.Box, entry: DotfileEntry):
+        """Add one group per section of the file (or a single "Configuration")."""
         parsed = parse_config(entry.get_config_path() or entry.path)
         fields = getattr(parsed, "fields", [])
-        if not fields:
-            row = Adw.ActionRow(title="No configurable fields detected")
-            row.add_css_class("dim-label")
-            container.add(row)
-            return
 
+        by_section: dict[str, list[Gtk.Widget]] = {}
         for field in fields:
             row = create_field_row(self, field, parsed, entry)
             if row is not None:
-                container.add(row)
+                by_section.setdefault(field.section or "General", []).append(row)
+
+        if not by_section:
+            group = Adw.PreferencesGroup(title="Configuration")
+            row = Adw.ActionRow(title="No configurable fields detected")
+            row.add_css_class("dim-label")
+            group.add(row)
+            container.append(group)
+            return
+
+        # Same key names recur across sections (size, enabled, ...): the group
+        # title is what tells them apart. A file with one section needs no titles.
+        single = len(by_section) == 1
+        for section, rows in by_section.items():
+            group = Adw.PreferencesGroup(
+                title="Configuration" if single else esc(section))
+            for row in rows:
+                group.add(row)
+            container.append(group)
 
     # ── Field change handlers (delegated) ────────────────────────────
 

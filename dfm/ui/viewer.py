@@ -72,7 +72,7 @@ class TextViewerDialog(Adw.Dialog):
 
         # Line wrap toggle
         self.wrap_btn = Gtk.ToggleButton(
-            icon_name="format-text-wrapping-symbolic",
+            icon_name="view-wrapped-symbolic",
             tooltip_text="Toggle line wrapping",
         )
         self.wrap_btn.set_active(False)
