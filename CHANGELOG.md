@@ -6,6 +6,8 @@ All notable changes to DFM are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-15
+
 ### Added
 - **Use an existing local repo** (GitHub Sync > Setup): point DFM at a dotfiles repo you
   already cloned, with its data, on any git host. DFM shows the remote, branch, layout and
@@ -100,6 +102,7 @@ config directories), edits them in place with widgets that match each value, and
   not just Arch;
 - ships an XDG desktop entry.
 
-[Unreleased]: https://github.com/VictorGSchneider/DFM/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/VictorGSchneider/DFM/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/VictorGSchneider/DFM/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/VictorGSchneider/DFM/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/VictorGSchneider/DFM/releases/tag/v2.0.0
